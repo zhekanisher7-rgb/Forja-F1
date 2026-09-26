@@ -1137,11 +1137,20 @@ function offsetEdge(edge: THREE.Vector3[], side: number, dist: number): THREE.Ve
 }
 
 /** True if a world XZ sample sits on (or inside) a foreign asphalt ribbon. */
-function pointOnForeignAsphalt(pts: TrackPoint[], x: number, z: number, selfI: number, margin = 0.6): boolean {
+function pointOnForeignAsphalt(
+  pts: TrackPoint[],
+  x: number,
+  z: number,
+  selfI: number,
+  margin = 0.6,
+  y?: number,
+  dyMax = 2.5,
+): boolean {
   const n = pts.length;
   if (n < 8) return false;
   const total = pts[n - 1]?.s || 1;
   const selfS = pts[Math.min(selfI, n - 1)].s;
+  const selfY = y ?? pts[Math.min(selfI, n - 1)].y;
   for (let j = 0; j < n - 1; j += 2) {
     let along = Math.abs(pts[j].s - selfS);
     if (along > total * 0.5) along = total - along;
@@ -1158,7 +1167,11 @@ function pointOnForeignAsphalt(pts: TrackPoint[], x: number, z: number, selfI: n
     const pz = a.z + dz * t;
     const dist = Math.hypot(x - px, z - pz);
     const half = (a.width + (b.width - a.width) * t) * 0.5 + margin;
-    if (dist <= half) return true;
+    if (dist > half) continue;
+    // Stacked decks (ΔY large) are not the same driveable surface
+    const py = a.y + (b.y - a.y) * t;
+    if (Math.abs(selfY - py) > dyMax) continue;
+    return true;
   }
   return false;
 }
@@ -1176,8 +1189,11 @@ function addTecproBarriers(
   const n = Math.min(wallBase.length, pts.length);
   if (n < 2) return;
   const total = pts[pts.length - 1]?.s || 1;
-  // Larger S/F gap — end-of-lap must stay free of jagged mid-asphalt walls
-  const skipM = 22;
+  // No along-track S/F gap — outer Tecpro must be continuous (grass exits closed).
+  // Mid-asphalt protection: coplanar / foreign-asphalt / collapsed-miter checks below.
+  // Cap ribbon still uses a tiny seam skip so the top plate does not double at the join.
+  const skipM = 0;
+  const capSkipM = 2.5;
 
   const positions: number[] = [];
   const normals: number[] = [];
@@ -1210,10 +1226,19 @@ function addTecproBarriers(
     }
     const a = wallBase[i];
     const b = wallBase[i + 1];
+    // Collapsed miter pulls the edge inward — wall would sit mid-asphalt
+    const c0 = pts[Math.min(i, pts.length - 1)];
+    const c1 = pts[Math.min(i + 1, pts.length - 1)];
+    const lat0 = Math.hypot(a.x - c0.x, a.z - c0.z);
+    const lat1 = Math.hypot(b.x - c1.x, b.z - c1.z);
+    if (lat0 < c0.width * 0.35 || lat1 < c1.width * 0.35) {
+      along += Math.hypot(b.x - a.x, b.z - a.z);
+      continue;
+    }
     // Never place Tecpro ON driveable asphalt of another (or self-crossed) ribbon
     if (
-      pointOnForeignAsphalt(pts, a.x, a.z, i, 0.35) ||
-      pointOnForeignAsphalt(pts, b.x, b.z, i + 1, 0.35)
+      pointOnForeignAsphalt(pts, a.x, a.z, i, 0.35, a.y) ||
+      pointOnForeignAsphalt(pts, b.x, b.z, i + 1, 0.35, b.y)
     ) {
       along += Math.hypot(b.x - a.x, b.z - a.z);
       continue;
@@ -1278,7 +1303,7 @@ function addTecproBarriers(
   const cL = side < 0 ? capOuter : capInner;
   const cR = side < 0 ? capInner : capOuter;
   const cap = new THREE.Mesh(
-    buildRibbonGeometrySkipJoinCoplanar(cL, cR, wallH + 0.02, pts, skipM),
+    buildRibbonGeometrySkipJoinCoplanar(cL, cR, wallH + 0.02, pts, capSkipM),
     capMat,
   );
   cap.name = 'tecproCap';

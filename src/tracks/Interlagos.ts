@@ -3,6 +3,10 @@
  * Anti-clockwise: outbound stays EAST; climb onto S/F stays WEST so ribbons never
  * stack in plan view. Width kept moderate so Tecpro stays at asphalt edges
  * (old 3.8× scale made half-widths collide and put barriers mid-road).
+ *
+ * End-of-lap: west climb drops to a south stub, then dense NNE-aligned rejoin
+ * into S/F (same heading as outbound) — no Catmull hook / edge-width collapse
+ * that left a Tecpro gap and asphalt z-fight at the junction.
  */
 import { buildCenterline, trackLength, type TrackData } from './Track';
 
@@ -43,9 +47,22 @@ const RAW: { x: number; z: number; y?: number; width?: number }[] = [
   { x: -90, z: 250, y: 5.65, width: 11 },
   { x: -95, z: 180, y: 5.65, width: 11 },
   { x: -100, z: 110, y: 5.6, width: 12 },
-  { x: -85, z: 50, y: 5.55, width: 12 },
-  { x: -45, z: 18, y: 5.5, width: 12 },
-  { x: -18, z: 6, y: 5.5, width: 12 },
+  // South stub west of Pinheirinho, then dense NNE rejoin (match S/F heading)
+  { x: -92, z: 55, y: 5.55, width: 12 },
+  { x: -78, z: 18, y: 5.5, width: 12 },
+  { x: -62, z: -10, y: 5.5, width: 12 },
+  { x: -42, z: -28, y: 5.5, width: 12 },
+  { x: -25, z: -32, y: 5.5, width: 12 },
+  { x: -12, z: -28, y: 5.5, width: 12 },
+  { x: -5, z: -18, y: 5.5, width: 12 },
+  { x: -2.8, z: -12, y: 5.5, width: 12 },
+  { x: -1.8, z: -8, y: 5.5, width: 12 },
+  { x: -1.2, z: -5.5, y: 5.5, width: 12 },
+  { x: -0.8, z: -3.5, y: 5.5, width: 12 },
+  { x: -0.5, z: -2.2, y: 5.5, width: 12 },
+  { x: -0.3, z: -1.2, y: 5.5, width: 12 },
+  { x: -0.15, z: -0.55, y: 5.5, width: 12 },
+  { x: -0.05, z: -0.18, y: 5.5, width: 12 },
   { x: 0, z: 0, y: 5.5, width: 12 },
 ].map((p) => ({ ...p, width: (p.width ?? 10) * ROAD_WIDTH_SCALE }));
 
