@@ -578,8 +578,9 @@ function addGround(root: THREE.Group, pts: TrackData['points'], quality: Quality
   const cz = (minZ + maxZ) / 2;
 
   // Gently varying heightfield following track corridor + hills / harbor
-  // Medium: ~72 segs (~5k verts) — cheap enough for 60 FPS
-  const segs = quality.sceneryStep >= 5 ? 48 : quality.sceneryStep >= 3 ? 72 : 96;
+  // Medium: ~72 segs (~5k verts) — cheap enough for 60 FPS; High/Ultra denser cliffs
+  const segs =
+    quality.sceneryStep >= 5 ? 48 : quality.sceneryStep >= 3 ? 72 : quality.treeDetail >= 8 ? 128 : 108;
   const geo = new THREE.PlaneGeometry(gw, gd, segs, segs);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
@@ -948,6 +949,12 @@ function addHarbor(root: THREE.Group, pts: TrackPoint[], quality: QualityProfile
     { x: 245, z: -5, w: 100, d: 10, h: 0.55, y: 0.22 },
     { x: 255, z: -18, w: 70, d: 12, h: 0.4, y: 0.15 },
   ];
+  if (quality.maxDecor >= 40) {
+    quaySpecs.push({ x: 200, z: -28, w: 48, d: 8, h: 0.35, y: 0.12 });
+  }
+  if (quality.maxDecor >= 64) {
+    quaySpecs.push({ x: 290, z: -12, w: 36, d: 7, h: 0.38, y: 0.14 });
+  }
   for (const q of quaySpecs) {
     if (!boxClearsRibbon(pts, q.x, q.z, q.w, q.d, 3.5)) continue;
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(q.w, q.h, q.d), quayMat);
@@ -974,6 +981,12 @@ function addHarbor(root: THREE.Group, pts: TrackPoint[], quality: QualityProfile
   }
   if (quality.maxDecor >= 30) {
     boats.push([215, -180, 0.65]);
+  }
+  if (quality.maxDecor >= 48) {
+    boats.push([175, -188, 0.2], [265, -175, -0.7]);
+  }
+  if (quality.maxDecor >= 80) {
+    boats.push([230, -195, 0.9]);
   }
   const hullHalf = Math.hypot(14 / 2, 4 / 2);
   for (const [bx, bz, rot] of boats) {
@@ -1411,9 +1424,19 @@ function addTunnelEntranceRocks(
     ? new THREE.MeshLambertMaterial({ color: 0x3a6a34 })
     : new THREE.MeshStandardMaterial({ color: 0x3a6a34, roughness: 0.9 });
 
-  // Tier: low fewer chunks; medium+ full landmark
+  // Tier: low fewer chunks; medium+ full landmark; High/Ultra denser cliff face
   const chunks =
-    quality.maxDecor >= 30 ? 9 : quality.maxDecor >= 20 ? 7 : quality.maxDecor >= 12 ? 5 : 3;
+    quality.maxDecor >= 60
+      ? 14
+      : quality.maxDecor >= 40
+        ? 11
+        : quality.maxDecor >= 30
+          ? 9
+          : quality.maxDecor >= 20
+            ? 7
+            : quality.maxDecor >= 12
+              ? 5
+              : 3;
 
   const baseOff = a.width * 0.5 + quality.sceneryMargin + 6;
   for (let i = 0; i < chunks; i++) {
@@ -1452,7 +1475,7 @@ function addTunnelEntranceRocks(
       group.add(lip);
     }
 
-    // Sparse scrub on ledges — Medium+
+    // Sparse scrub on ledges — Medium+; denser clumps on High/Ultra
     if (quality.maxDecor >= 20 && i % 2 === 0) {
       const scrub = new THREE.Mesh(
         new THREE.ConeGeometry(0.9, 1.2, Math.max(5, quality.treeDetail)),
@@ -1461,6 +1484,12 @@ function addTunnelEntranceRocks(
       scrub.position.set(px + nx * 0.8, gy + sy * 0.78, pz + nz * 0.8);
       scrub.scale.set(1.4, 1.1, 1.4);
       group.add(scrub);
+      if (quality.maxDecor >= 48) {
+        const scrub2 = scrub.clone();
+        scrub2.position.set(px + nx * 1.6, gy + sy * 0.72, pz + nz * 0.35);
+        scrub2.scale.set(1.1, 0.95, 1.1);
+        group.add(scrub2);
+      }
     }
   }
 
@@ -1727,6 +1756,7 @@ function addScenery(
   const trunkCyl = new THREE.CylinderGeometry(0.22, 0.32, 1, detail);
   const palmTrunk = new THREE.CylinderGeometry(0.18, 0.28, 1, detail);
   const coneLeaf = new THREE.ConeGeometry(1.5, 1, Math.max(5, detail));
+  const bushCrown = new THREE.SphereGeometry(1.15, Math.max(5, detail), Math.max(4, detail - 1));
   const palmTop = new THREE.SphereGeometry(1.8, detail, Math.max(4, detail - 1));
   const poleGeo = new THREE.CylinderGeometry(0.08, 0.1, 1, 5);
   const glowGeo = new THREE.SphereGeometry(0.28, 6, 6);
@@ -1736,6 +1766,7 @@ function addScenery(
   const buildings: Xform[] = [];
   const trunks: Xform[] = [];
   const cones: Xform[] = [];
+  const bushCrowns: Xform[] = [];
   const palmTrunks: Xform[] = [];
   const palmTops: Xform[] = [];
   const poles: Xform[] = [];
@@ -1785,12 +1816,13 @@ function addScenery(
       }
     }
 
-    // --- Trees / palms: closer but still clear of barriers ---
+    // --- Trees / palms / deciduous bushes: closer but still clear of barriers ---
     if (ii % 3 !== 0 && tCount < quality.maxTrees) {
       const isPalm = ii % 5 === 1;
-      const isPine = !isPalm && ii % 2 === 0;
-      if (isPalm || isPine) {
-        const halfToward = isPalm ? 1.6 : 1.4;
+      const isBush = !isPalm && ii % 7 === 3;
+      const isPine = !isPalm && !isBush && ii % 2 === 0;
+      if (isPalm || isPine || isBush) {
+        const halfToward = isPalm ? 1.6 : isBush ? 1.1 : 1.4;
         const extra = 0.5 + (i % 2) * 0.8;
         const placed = placeAlongEdgeNormal(pts, edge, i, side, halfToward, margin, extra);
         if (placed && acceptPropY(pts, placed.x, placed.z, placed.y)) {
@@ -1802,6 +1834,15 @@ function addScenery(
             palmTops.push({
               x: placed.x, y: placed.y + 5.2, z: placed.z,
               sx: 1.2, sy: 0.55, sz: 1.2,
+            });
+          } else if (isBush) {
+            trunks.push({
+              x: placed.x, y: placed.y + 0.7, z: placed.z,
+              sx: 0.75, sy: 1.35, sz: 0.75,
+            });
+            bushCrowns.push({
+              x: placed.x, y: placed.y + 2.15, z: placed.z,
+              sx: 1.35 + (i % 3) * 0.15, sy: 1.05, sz: 1.35 + (i % 2) * 0.1,
             });
           } else {
             trunks.push({
@@ -1837,11 +1878,19 @@ function addScenery(
   }
 
   // Distant Monaco hillside blocks — sit ON terrain heightfield
+  // Spread across casino hills, tunnel cliffs, and harbor-side slopes
+  const clusterSites: [number, number][] = [
+    [320, 420], [375, 490], [290, 450], [410, 380],
+    [430, 200], [360, 140], [450, 110], // tunnel / Portier cliffs
+    [180, 280], [250, 330], [100, 250], // Beau Rivage climb
+    [300, -40], [160, -90], [340, -100], // harbor hinterland (off asphalt)
+  ];
   const clusters = Math.max(2, quality.hillsideClusters);
   for (let c = 0; c < clusters; c++) {
-    const baseX = 320 + (c % 3) * 55 + (c * 11) % 30;
-    const baseZ = 420 + Math.floor(c / 3) * 70 + (c * 17) % 40;
-    const localN = 2 + (c % 3);
+    const site = clusterSites[c % clusterSites.length];
+    const baseX = site[0] + (c * 11) % 30 - 10;
+    const baseZ = site[1] + (c * 17) % 40 - 12;
+    const localN = 2 + (c % 3) + (quality.maxDecor >= 48 && c % 2 === 0 ? 1 : 0);
     for (let k = 0; k < localN; k++) {
       const hx = baseX + (k % 3) * 16 - 8;
       const hz = baseZ + Math.floor(k / 3) * 18;
@@ -1863,9 +1912,13 @@ function addScenery(
   const shrubs: Xform[] = [];
   const flowers: Xform[] = [];
   const cliffs: Xform[] = [];
-  const flowerColors = [0xc45a6a, 0xd4a03a, 0x6a8cc4, 0xc4783a];
-  const rockStride = Math.max(14, strideM * 2.1);
-  let nextRockS = 10;
+  const flowerColors = [0xc45a6a, 0xd4a03a, 0x6a8cc4, 0xc4783a, 0x8a5a9a, 0xd47868];
+  // Tighter stride fills maxDecor budget with more variety (still road-clear)
+  const rockStride = Math.max(
+    quality.maxDecor >= 60 ? 9 : quality.maxDecor >= 40 ? 11 : 13,
+    strideM * (quality.maxDecor >= 48 ? 1.55 : 1.85),
+  );
+  let nextRockS = 8;
   let decorCount = 0;
   for (let i = 0; i < pts.length - 1 && decorCount < quality.maxDecor; i++) {
     if (pts[i].s + 1e-3 < nextRockS) continue;
@@ -1911,9 +1964,21 @@ function addScenery(
           color: flowerColors[i % flowerColors.length],
         });
         decorCount++;
+        // Companion shrubs around flower beds (High/Ultra budget)
+        if (quality.maxDecor >= 48 && decorCount < quality.maxDecor) {
+          shrubs.push({
+            x: placed.x + placed.nx * 1.4,
+            y: placed.y + 0.32,
+            z: placed.z + placed.nz * 1.4,
+            sx: 0.7, sy: 0.55, sz: 0.7,
+            rotY: (i % 5) * 0.4,
+          });
+          decorCount++;
+        }
       }
-    } else if (mode === 3 && quality.maxDecor >= 24) {
-      if ((pts[i].y ?? 0) < 3.5) continue;
+    } else if (mode === 3 && quality.maxDecor >= 22) {
+      // Cliffs on elevated hills + tunnel approaches (y > 2.2)
+      if ((pts[i].y ?? 0) < 2.2) continue;
       const placed = placeAlongEdgeNormal(pts, edge, i, side, 2.2, margin + 3.5, 5 + (i % 2));
       if (placed && acceptPropY(pts, placed.x, placed.z, placed.y)) {
         const { clearance } = nearestEdgeClearance(pts, placed.x, placed.z);
@@ -1925,6 +1990,18 @@ function addScenery(
           rotY: Math.atan2(placed.nx, placed.nz),
         });
         decorCount++;
+        // Secondary ledge rock for denser cliffs
+        if (quality.maxDecor >= 48 && decorCount < quality.maxDecor) {
+          const rs = 1.1 + (i % 3) * 0.25;
+          rocks.push({
+            x: placed.x + placed.nx * 2.2,
+            y: placed.y + rs * 0.4,
+            z: placed.z + placed.nz * 2.2,
+            sx: rs * 1.3, sy: rs * 0.85, sz: rs,
+            rotY: (i % 7) * 0.35,
+          });
+          decorCount++;
+        }
       }
     }
   }
@@ -1968,6 +2045,7 @@ function addScenery(
 
   addInstanced(trunkCyl, treeTrunkMat, trunks, false);
   addInstanced(coneLeaf, treeLeafMat, cones, false);
+  addInstanced(bushCrown, treeLeafMat, bushCrowns, false);
   addInstanced(palmTrunk, treeTrunkMat, palmTrunks, false);
   addInstanced(palmTop, palmLeafMat, palmTops, false);
   addInstanced(poleGeo, lampMat, poles, false);
@@ -1977,7 +2055,7 @@ function addScenery(
   const shrubMat = makeSceneryMat(0x2e6a32, quality);
   const flowerMat = makeSceneryMat(0xffffff, quality);
   const cliffMat = makeSceneryMat(0x5c584f, quality);
-  const rockGeo = new THREE.DodecahedronGeometry(0.7, 0);
+  const rockGeo = new THREE.DodecahedronGeometry(0.7, quality.treeDetail >= 7 ? 1 : 0);
   const shrubGeo = new THREE.ConeGeometry(0.85, 1.1, Math.max(5, detail));
   const flowerGeo = new THREE.BoxGeometry(1, 1, 1);
   const cliffGeo = new THREE.BoxGeometry(1, 1, 1);

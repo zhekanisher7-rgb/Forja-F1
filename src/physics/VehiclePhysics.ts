@@ -149,9 +149,10 @@ export class VehiclePhysics {
     const drsDownforceMul = state.drsOpen ? 0.85 : 1;
 
     // ERS boost (disabled when out of fuel — no drive force at all)
+    // ~29% stronger than prior 120 kW; drain unchanged (~8.3 s full bar) so QR/TT stay usable
     let ersBoost = 0;
     if (state.fuel > 0 && input.ers && state.ers > 0.01 && state.speed > 5) {
-      ersBoost = 120; // kW extra
+      ersBoost = 155; // kW extra
       state.ers = Math.max(0, state.ers - 0.12 * dt);
     } else if (state.speed > 20 && input.brake > 0.3) {
       // regen

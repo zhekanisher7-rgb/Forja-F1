@@ -441,21 +441,44 @@ export function sampleTerrainHeight(pts: TrackPoint[], x: number, z: number): nu
   }
 
   // Procedural hills / cliffs / harbor (cheap, no extra draw calls)
+  // Multi-frequency landforms: broad hills + mid ridges + fine rocky noise
   const hill =
-    Math.sin(x * 0.011) * Math.cos(z * 0.009) * 2.2 +
-    Math.sin(x * 0.0045 + z * 0.0065) * 3.5 +
-    Math.sin(x * 0.023 - z * 0.017) * 1.15;
-  const casino = Math.max(0, 1 - Math.hypot(x - 370, z - 500) / 220) * 9;
-  // Rocky rise around Monaco tunnel mouth (Portier → tunnel)
-  const tunnelCliff = Math.max(0, 1 - Math.hypot(x - 400, z - 160) / 95) * 7.5;
+    Math.sin(x * 0.011) * Math.cos(z * 0.009) * 2.55 +
+    Math.sin(x * 0.0045 + z * 0.0065) * 4.1 +
+    Math.sin(x * 0.023 - z * 0.017) * 1.45 +
+    Math.sin(x * 0.038 + z * 0.029) * Math.cos(z * 0.021) * 0.85;
+  // Casino / Massenet plateau with stepped hillside terraces
+  const casinoDist = Math.hypot(x - 370, z - 500);
+  const casino = Math.max(0, 1 - casinoDist / 220) * 9.8;
+  const casinoTerraces =
+    Math.max(0, 1 - casinoDist / 160) *
+    (Math.sin(x * 0.055) * 1.35 + Math.cos(z * 0.048) * 1.1);
+  // Rocky rise around Monaco tunnel mouth (Portier → tunnel) + side gullies
+  const tunnelDist = Math.hypot(x - 400, z - 160);
+  const tunnelCliff = Math.max(0, 1 - tunnelDist / 95) * 8.6;
+  const tunnelGully =
+    Math.max(0, 1 - tunnelDist / 70) *
+    Math.abs(Math.sin(x * 0.07 + z * 0.05)) * 2.4;
+  // Beau Rivage / Magasin climb hills (north of Portier overpass)
+  const climbHill =
+    Math.max(0, 1 - Math.hypot(x - 300, z - 340) / 130) *
+    (3.2 + Math.sin(x * 0.03) * 1.4);
   const quayZone = x > 120 && z < 80 && z > -140;
-  let base = Math.max(-0.4, hill * 0.45 + casino + tunnelCliff * 0.85);
+  let base = Math.max(
+    -0.4,
+    hill * 0.48 + casino + casinoTerraces + tunnelCliff * 0.9 + tunnelGully * 0.55 + climbHill,
+  );
   if (quayZone) {
     // Harbor flat / quay level — props sit on quay, not floating over water
+    // Rocky bank lip near waterline for readable harbor edge
     const quay = 0.35;
     const towardWater = Math.max(0, Math.min(1, (40 - z) / 80));
+    const bankLip =
+      Math.max(0, 1 - Math.abs(z + 20) / 55) *
+      Math.max(0, 1 - Math.abs(x - 240) / 90) *
+      (0.55 + Math.sin(x * 0.08) * 0.25);
     base = quay * (1 - towardWater * 0.85) + (-0.35) * towardWater * 0.85;
-    base = Math.max(base, hill * 0.15);
+    base = Math.max(base, hill * 0.18) + bankLip * (1 - towardWater * 0.6);
   }
 
   if (!found) return base;
