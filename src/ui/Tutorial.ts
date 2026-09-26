@@ -12,10 +12,11 @@ export class TutorialOverlay {
       <div class="tutorial-card">
         <h2>Обучение — управление</h2>
         <table>
-          <tr><td>W</td><td>Газ (аналоговый разгон)</td></tr>
-          <tr><td>S</td><td>Двигательное торможение</td></tr>
+          <tr><td>W / ↑</td><td>Газ (аналоговый разгон)</td></tr>
+          <tr><td>S / ↓</td><td>Двигательное торможение</td></tr>
           <tr><td>Shift</td><td>Основной тормоз</td></tr>
-          <tr><td>A / D</td><td>Руль влево / вправо</td></tr>
+          <tr><td>A / ←</td><td>Руль влево</td></tr>
+          <tr><td>D / →</td><td>Руль вправо</td></tr>
           <tr><td>Ctrl</td><td>ERS-буст (пока есть заряд)</td></tr>
           <tr><td>Пробел</td><td>DRS (только в зоне DRS)</td></tr>
           <tr><td>R</td><td>Задний ход (на низкой скорости)</td></tr>

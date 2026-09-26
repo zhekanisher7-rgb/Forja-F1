@@ -56,10 +56,10 @@ export class InputManager {
     this.brake = lerpToward(this.brake, wantBrake ? 1 : 0, 1 - Math.exp(-brakeRamp * dt));
     this.engineBrake = lerpToward(this.engineBrake, wantEngineBrake ? 1 : 0, 1 - Math.exp(-engineBrakeRamp * dt));
 
-    // A = LEFT (−1), D = RIGHT (+1).
+    // Screen/camera: A/← left, D/→ right (sign flipped vs +yaw so chase cam matches).
     let steerTarget = 0;
-    if (wantLeft) steerTarget -= 1;
-    if (wantRight) steerTarget += 1;
+    if (wantLeft) steerTarget += 1;
+    if (wantRight) steerTarget -= 1;
     this.steer = lerpToward(this.steer, steerTarget, 1 - Math.exp(-steerRamp * dt));
 
     const camDown = KEYS['KeyC'];
