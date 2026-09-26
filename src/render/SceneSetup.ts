@@ -20,7 +20,7 @@ export function createRenderer(
   applyRendererQuality(renderer, tier);
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.22;
+  renderer.toneMappingExposure = 1.28;
   return renderer;
 }
 
@@ -95,22 +95,38 @@ export function makeEnvCubemap(wet: boolean, night = false): THREE.CubeTexture {
     ? ['#0a1528', '#0a1528', '#1a2840', '#0a1010', '#0a1528', '#0a1528']
     : wet
       ? ['#5a6578', '#5a6578', '#8899aa', '#2a3030', '#5a6578', '#5a6578']
-      : ['#6aa0d0', '#6aa0d0', '#c8e0f8', '#3a5a30', '#7ab0d8', '#7ab0d8'];
+      : ['#5a98d0', '#5a98d0', '#d0e8fc', '#3a5a28', '#6aa8d8', '#6aa8d8'];
   for (let f = 0; f < 6; f++) {
     const c = document.createElement('canvas');
-    c.width = 64;
-    c.height = 64;
+    // 128² — sharper car reflections without heavy GPU cost
+    c.width = 128;
+    c.height = 128;
     const ctx = c.getContext('2d')!;
-    const g = ctx.createLinearGradient(0, 0, 0, 64);
+    const g = ctx.createLinearGradient(0, 0, 0, 128);
     g.addColorStop(0, cols[f]);
+    g.addColorStop(0.55, f === 2 ? cols[2] : cols[f]);
     g.addColorStop(1, f === 3 ? '#2a3a20' : cols[2]);
     ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 64, 64);
+    ctx.fillRect(0, 0, 128, 128);
     if (f !== 3 && !night) {
-      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      // Soft sun disc for specular highlights on bodywork
+      const sun = ctx.createRadialGradient(64, 36, 2, 64, 36, 28);
+      sun.addColorStop(0, 'rgba(255,250,230,0.85)');
+      sun.addColorStop(0.35, 'rgba(255,240,200,0.35)');
+      sun.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = sun;
       ctx.beginPath();
-      ctx.arc(32, 20, 10, 0, Math.PI * 2);
+      ctx.arc(64, 36, 28, 0, Math.PI * 2);
       ctx.fill();
+      // Horizon haze band
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fillRect(0, 70, 128, 22);
+    }
+    if (night && f !== 3) {
+      for (let i = 0; i < 40; i++) {
+        ctx.fillStyle = `rgba(255,255,255,${0.3 + Math.random() * 0.7})`;
+        ctx.fillRect(Math.random() * 128, Math.random() * 70, 1.5, 1.5);
+      }
     }
     faces.push(c);
   }
@@ -148,16 +164,16 @@ export function createScene(
   addSkyDome(scene, weather, night);
 
   const hemi = new THREE.HemisphereLight(
-    night ? 0x334466 : weather.type === 'wet' ? 0x8899aa : 0xc8dcff,
+    night ? 0x334466 : weather.type === 'wet' ? 0x8899aa : 0xd0e4ff,
     night ? 0x0a1018 : weather.type === 'wet' ? 0x2a3030 : 0x3a4a28,
-    night ? 0.22 : weather.type === 'wet' ? 0.45 : 0.7,
+    night ? 0.22 : weather.type === 'wet' ? 0.45 : 0.78,
   );
   hemi.name = 'hemi';
   scene.add(hemi);
 
   const sun = new THREE.DirectionalLight(
-    night ? 0xaabbff : 0xfff0d0,
-    night ? 0.25 : weather.type === 'wet' ? 0.55 : 1.45,
+    night ? 0xaabbff : 0xfff2d8,
+    night ? 0.25 : weather.type === 'wet' ? 0.55 : 1.55,
   );
   sun.name = 'sun';
   sun.position.set(80, 120, 40);
@@ -228,14 +244,14 @@ export function applyWeatherVisuals(
 
   const hemi = scene.getObjectByName('hemi') as THREE.HemisphereLight | undefined;
   if (hemi) {
-    hemi.color.set(night ? 0x334466 : weather.type === 'wet' ? 0x8899aa : 0xc8dcff);
+    hemi.color.set(night ? 0x334466 : weather.type === 'wet' ? 0x8899aa : 0xd0e4ff);
     hemi.groundColor.set(night ? 0x0a1018 : weather.type === 'wet' ? 0x2a3030 : 0x3a4a28);
-    hemi.intensity = night ? 0.22 : weather.type === 'wet' ? 0.45 : 0.7;
+    hemi.intensity = night ? 0.22 : weather.type === 'wet' ? 0.45 : 0.78;
   }
   const sun = scene.getObjectByName('sun') as THREE.DirectionalLight | undefined;
   if (sun) {
-    sun.color.set(night ? 0xaabbff : 0xfff0d0);
-    sun.intensity = night ? 0.25 : weather.type === 'wet' ? 0.55 : 1.45;
+    sun.color.set(night ? 0xaabbff : 0xfff2d8);
+    sun.intensity = night ? 0.25 : weather.type === 'wet' ? 0.55 : 1.55;
     applySunShadowQuality(sun, t);
   }
   const fill = scene.getObjectByName('fill') as THREE.DirectionalLight | undefined;

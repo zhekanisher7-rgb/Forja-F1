@@ -3,52 +3,65 @@ import type { TrackData, TrackPoint } from '../tracks/Track';
 import { getTrackEdges, sampleTerrainHeight } from '../tracks/Track';
 import { profileFor, type GraphicsTier, type QualityProfile } from './GraphicsQuality';
 
-/** Procedural asphalt — grain, tire wear lanes, edge darkening, faint dashes */
+/** Procedural asphalt — grain, tire wear, oil patches, edge darkening */
 function makeAsphaltTexture(anisotropy: number): THREE.CanvasTexture {
   const c = document.createElement('canvas');
-  c.width = 256;
+  c.width = 512;
   c.height = 512;
   const ctx = c.getContext('2d')!;
-  ctx.fillStyle = '#2a2a30';
-  ctx.fillRect(0, 0, 256, 512);
+  ctx.fillStyle = '#2c2c32';
+  ctx.fillRect(0, 0, 512, 512);
 
-  // Fine grain (cheaper than 28k on 512²)
-  for (let i = 0; i < 9000; i++) {
-    const v = 20 + Math.random() * 50;
-    const a = 0.05 + Math.random() * 0.12;
-    ctx.fillStyle = `rgba(${v},${v},${v + 5},${a})`;
-    ctx.fillRect(Math.random() * 256, Math.random() * 512, 1 + Math.random() * 2, 1 + Math.random() * 2);
+  // Fine grain
+  for (let i = 0; i < 14000; i++) {
+    const v = 18 + Math.random() * 55;
+    const a = 0.04 + Math.random() * 0.14;
+    ctx.fillStyle = `rgba(${v},${v},${v + 6},${a})`;
+    ctx.fillRect(Math.random() * 512, Math.random() * 512, 1 + Math.random() * 2.5, 1 + Math.random() * 2.5);
   }
-  // Rubber wear bands
-  for (let band = 0; band < 4; band++) {
-    const x0 = 40 + band * 45 + Math.random() * 12;
-    ctx.fillStyle = 'rgba(10,10,14,0.2)';
-    ctx.fillRect(x0, 0, 12 + Math.random() * 10, 512);
+  // Rubber wear bands (racing line)
+  for (let band = 0; band < 5; band++) {
+    const x0 = 55 + band * 80 + Math.random() * 18;
+    ctx.fillStyle = 'rgba(8,8,12,0.22)';
+    ctx.fillRect(x0, 0, 14 + Math.random() * 12, 512);
+  }
+  // Oil / polish sheen patches
+  for (let i = 0; i < 12; i++) {
+    const cx = 80 + Math.random() * 350;
+    const cy = Math.random() * 512;
+    const r = 20 + Math.random() * 50;
+    const grd = ctx.createRadialGradient(cx, cy, 2, cx, cy, r);
+    grd.addColorStop(0, 'rgba(55,55,62,0.35)');
+    grd.addColorStop(1, 'rgba(55,55,62,0)');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
   }
   // Edge darkening
-  const eg = ctx.createLinearGradient(0, 0, 36, 0);
-  eg.addColorStop(0, 'rgba(0,0,0,0.35)');
+  const eg = ctx.createLinearGradient(0, 0, 48, 0);
+  eg.addColorStop(0, 'rgba(0,0,0,0.4)');
   eg.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = eg;
-  ctx.fillRect(0, 0, 36, 512);
-  const eg2 = ctx.createLinearGradient(256, 0, 220, 0);
-  eg2.addColorStop(0, 'rgba(0,0,0,0.35)');
+  ctx.fillRect(0, 0, 48, 512);
+  const eg2 = ctx.createLinearGradient(512, 0, 464, 0);
+  eg2.addColorStop(0, 'rgba(0,0,0,0.4)');
   eg2.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = eg2;
-  ctx.fillRect(220, 0, 36, 512);
+  ctx.fillRect(464, 0, 48, 512);
 
-  ctx.strokeStyle = 'rgba(75,75,82,0.4)';
+  ctx.strokeStyle = 'rgba(80,80,88,0.35)';
   ctx.lineWidth = 3;
-  ctx.setLineDash([22, 18]);
+  ctx.setLineDash([28, 22]);
   ctx.beginPath();
-  ctx.moveTo(128, 0);
-  ctx.lineTo(128, 512);
+  ctx.moveTo(256, 0);
+  ctx.lineTo(256, 512);
   ctx.stroke();
   ctx.setLineDash([]);
 
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(1.2, 48);
+  tex.repeat.set(1.4, 36);
   tex.anisotropy = anisotropy;
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.generateMipmaps = true;
@@ -76,7 +89,7 @@ function makeKerbTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-/** Red/white Tecpro-style soft-wall stack (horizontal bands) */
+/** Red/white Tecpro-style soft-wall stack (horizontal bands — never blue) */
 function makeTecproTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 64;
@@ -86,21 +99,23 @@ function makeTecproTexture(): THREE.CanvasTexture {
   const bh = 128 / bands;
   for (let i = 0; i < bands; i++) {
     const red = i % 2 === 0;
-    ctx.fillStyle = red ? '#d01818' : '#f4f4f8';
+    ctx.fillStyle = red ? '#c81018' : '#f6f6fa';
     ctx.fillRect(0, i * bh, 64, bh);
     // foam bevel
-    ctx.fillStyle = red ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.05)';
-    ctx.fillRect(0, i * bh, 64, 4);
-    ctx.fillStyle = red ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.1)';
+    ctx.fillStyle = red ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.04)';
+    ctx.fillRect(0, i * bh, 64, 5);
+    ctx.fillStyle = red ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.1)';
     ctx.fillRect(0, i * bh + bh - 5, 64, 5);
   }
-  // vertical seam marks
-  ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+  // vertical module seams
+  ctx.strokeStyle = 'rgba(0,0,0,0.22)';
   ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(32, 0);
-  ctx.lineTo(32, 128);
-  ctx.stroke();
+  for (const x of [16, 32, 48]) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, 128);
+    ctx.stroke();
+  }
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -108,14 +123,15 @@ function makeTecproTexture(): THREE.CanvasTexture {
 }
 
 const SPONSOR_NAMES = ['FORJA', 'TEC', 'HYDRO', 'NEXUS', 'VOLT', 'AERO', 'PULSE', 'GRID'];
+/** Dark / red / gold boards only — never blue-white cubes that look like wrong barriers */
 const SPONSOR_COLORS = [
-  ['#0a1a3a', '#e8c040'],
+  ['#1a1208', '#e8c040'],
   ['#1a1a1e', '#e02020'],
-  ['#0a4060', '#40d0e8'],
-  ['#2a1040', '#c060ff'],
-  ['#102010', '#40e080'],
+  ['#101010', '#f0f0f0'],
+  ['#2a1010', '#ff6040'],
+  ['#141410', '#c8a020'],
   ['#301808', '#f08030'],
-  ['#101828', '#60a0ff'],
+  ['#0e0e10', '#e8e8ec'],
   ['#280808', '#f0e0c0'],
 ];
 
@@ -178,7 +194,7 @@ function makeBuildingFacadeTexture(): THREE.CanvasTexture {
   for (let r = 0; r < rows; r++) {
     for (let col = 0; col < cols; col++) {
       const lit = Math.random() > 0.45;
-      ctx.fillStyle = lit ? 'rgba(180,210,240,0.85)' : 'rgba(30,40,55,0.75)';
+      ctx.fillStyle = lit ? 'rgba(255,220,160,0.8)' : 'rgba(35,32,28,0.78)';
       const pad = 4;
       ctx.fillRect(col * mw + pad, r * mh + pad + 2, mw - pad * 2, mh - pad * 2 - 4);
       if (lit) {
@@ -253,10 +269,11 @@ export function createTrackMesh(
 
   // Continuous asphalt ribbon (dense Catmull-Rom samples) — clear Y above terrain, no polygonOffset
   const asphaltMat = new THREE.MeshStandardMaterial({
-    color: 0x3e3e46,
+    color: 0x3a3a42,
     map: makeAsphaltTexture(quality.anisotropy),
-    roughness: 0.92,
-    metalness: 0.04,
+    roughness: 0.78,
+    metalness: 0.08,
+    envMapIntensity: 0.55,
   });
   // Asphalt clearly above terrain/shoulders (0.055) — prevents Noghes/S-F z-fight
   const asphalt = new THREE.Mesh(buildRibbonGeometry(left, right, 0.055), asphaltMat);
@@ -964,8 +981,8 @@ function addTecproBarriers(
   quality: QualityProfile,
   pts: TrackPoint[],
 ): void {
-  const wallBase = offsetEdge(edge, side, 0.95);
-  const wallH = 1.15;
+  const wallBase = offsetEdge(edge, side, 1.2);
+  const wallH = 1.25;
   const n = Math.min(wallBase.length, pts.length);
   if (n < 2) return;
   const total = pts[pts.length - 1]?.s || 1;
@@ -1034,6 +1051,21 @@ function addTecproBarriers(
   wall.receiveShadow = true;
   wall.name = 'tecpro';
   root.add(wall);
+
+  // Thin top cap (red) — soft-wall stack silhouette, not blue/white cubes
+  const capMat = quality.useLambertScenery
+    ? new THREE.MeshLambertMaterial({ color: 0xc81018 })
+    : new THREE.MeshStandardMaterial({ color: 0xc81018, roughness: 0.7, metalness: 0.05 });
+  const capInner = offsetEdge(edge, side, 1.05);
+  const capOuter = offsetEdge(edge, side, 1.4);
+  const cL = side < 0 ? capOuter : capInner;
+  const cR = side < 0 ? capInner : capOuter;
+  const cap = new THREE.Mesh(
+    buildRibbonGeometrySkipJoin(cL, cR, wallH + 0.02, pts, skipM),
+    capMat,
+  );
+  cap.name = 'tecproCap';
+  root.add(cap);
 }
 
 /** Branded boards behind Tecpro — fictional FORJA/TEC/HYDRO etc. (InstancedMesh) */
@@ -1044,7 +1076,7 @@ function addSponsorBoards(
   quality: QualityProfile,
   pts: TrackPoint[],
 ): void {
-  const boardBase = offsetEdge(edge, side, 1.55);
+  const boardBase = offsetEdge(edge, side, 2.15);
   const n = Math.min(boardBase.length, pts.length);
   if (n < 3) return;
   const total = pts[pts.length - 1]?.s || 1;
@@ -1260,8 +1292,8 @@ function addTunnel(
   }
 }
 
-/** Barrier offset from asphalt edge (matches addWallRibbon) */
-const BARRIER_OUT = 0.9;
+/** Barrier offset from asphalt edge (matches Tecpro soft walls) */
+const BARRIER_OUT = 1.2;
 
 /**
  * Min distance from asphalt edge to prop center so AABB stays outside
@@ -1409,7 +1441,7 @@ function addScenery(
   const facadeTex = makeBuildingFacadeTexture();
   facadeTex.repeat.set(1, 1);
 
-  const bldgColors = [0x8a8078, 0xc4a882, 0x9a8a7a, 0xb8a090, 0x6a7080, 0xd0c0a8, 0x7a8890];
+  const bldgColors = [0x8a8078, 0xc4a882, 0x9a8a7a, 0xb8a090, 0x7a7068, 0xd0c0a8, 0x908878];
   const bldgMat = makeSceneryMat(0xffffff, quality, facadeTex) as THREE.MeshLambertMaterial;
   // allow per-instance tint
   bldgMat.vertexColors = false;
@@ -1559,11 +1591,11 @@ function addScenery(
     }
   }
 
-  // Rock outcrops + flower beds (InstancedMesh) — livelier landscape, cheap
+  // Rock outcrops + low green shrubs — NO blue/white/pink cubes on asphalt
   const rocks: Xform[] = [];
-  const beds: Xform[] = [];
-  const rockStride = Math.max(14, strideM * 2.2);
-  let nextRockS = 8;
+  const shrubs: Xform[] = [];
+  const rockStride = Math.max(16, strideM * 2.4);
+  let nextRockS = 10;
   let decorCount = 0;
   for (let i = 0; i < pts.length - 1 && decorCount < quality.maxDecor; i++) {
     if (pts[i].s + 1e-3 < nextRockS) continue;
@@ -1571,9 +1603,12 @@ function addScenery(
     const useLeft = i % 2 === 0;
     const edge = useLeft ? left : right;
     const side = useLeft ? -1 : 1;
-    if (i % 3 === 0) {
-      const placed = placeAlongEdgeNormal(pts, edge, i, side, 1.2, margin + 1.5, 3 + (i % 3));
+    // Extra margin so decor never sits on ribbon / Tecpro
+    if (i % 2 === 0) {
+      const placed = placeAlongEdgeNormal(pts, edge, i, side, 1.2, margin + 2.5, 4 + (i % 3));
       if (placed && acceptPropY(pts, placed.x, placed.z, placed.y)) {
+        const { clearance } = nearestEdgeClearance(pts, placed.x, placed.z);
+        if (clearance < BARRIER_OUT + margin + 1.5) continue;
         const rs = 0.8 + (i % 4) * 0.35;
         rocks.push({
           x: placed.x, y: placed.y + rs * 0.45, z: placed.z,
@@ -1583,12 +1618,14 @@ function addScenery(
         decorCount++;
       }
     } else {
-      const placed = placeAlongEdgeNormal(pts, edge, i, side, 1.0, margin + 0.8, 1.5);
+      const placed = placeAlongEdgeNormal(pts, edge, i, side, 0.9, margin + 2.0, 3.5);
       if (placed && acceptPropY(pts, placed.x, placed.z, placed.y)) {
-        beds.push({
-          x: placed.x, y: placed.y + 0.18, z: placed.z,
-          sx: 2.2 + (i % 3) * 0.4, sy: 0.35, sz: 1.2,
-          rotY: Math.atan2(placed.nx, placed.nz),
+        const { clearance } = nearestEdgeClearance(pts, placed.x, placed.z);
+        if (clearance < BARRIER_OUT + margin + 1.2) continue;
+        shrubs.push({
+          x: placed.x, y: placed.y + 0.35, z: placed.z,
+          sx: 0.9 + (i % 3) * 0.15, sy: 0.7, sz: 0.9 + (i % 2) * 0.1,
+          rotY: (i % 5) * 0.5,
         });
         decorCount++;
       }
@@ -1640,10 +1677,11 @@ function addScenery(
   addInstanced(glowGeo, lampGlowMat, glows, false);
 
   const rockMat = makeSceneryMat(0x6a6860, quality);
-  const bedMat = makeSceneryMat(0xc04070, quality);
+  const shrubMat = makeSceneryMat(0x2e6a32, quality);
   const rockGeo = new THREE.DodecahedronGeometry(0.7, 0);
+  const shrubGeo = new THREE.ConeGeometry(0.85, 1.1, Math.max(5, detail));
   addInstanced(rockGeo, rockMat, rocks, false);
-  addInstanced(unitBox, bedMat, beds, false);
+  addInstanced(shrubGeo, shrubMat, shrubs, false);
 
   root.add(group);
 }
