@@ -12,7 +12,7 @@ export interface InputState {
 /** Shared analog ramps — identical in Quick Race and Time Trial. */
 export const INPUT_SMOOTHING = {
   throttleRamp: 3.2,
-  steerRamp: 16.0, // very snappy turn-in — held L/R reaches full lock fast (QR/TT)
+  steerRamp: 8.0, // middle ground — was 4 soft / 16 extreme (QR/TT)
   brakeRamp: 5.5,
   engineBrakeRamp: 4.0,
 } as const;

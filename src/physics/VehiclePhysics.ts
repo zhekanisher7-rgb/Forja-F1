@@ -64,22 +64,22 @@ export interface PhysicsConfig {
 /** Shared player chassis — identical in Quick Race and Time Trial (AI must not alter these). */
 export const PLAYER_VEHICLE_SPEC = {
   mass: 620,
-  maxPower: 980, // kW peak ICE+MGUK
+  maxPower: 1130, // kW peak ICE+MGUK (~15% over prior 980)
   ersBoostKw: 200, // Ctrl ERS deploy
   dragCd: 0.88,
   downforceCl: 3.0,
   wheelbase: 3.6,
   /** Dry + DRS fan estimate (km/h) matching arcade power curve */
-  topSpeedKmh: 355,
+  topSpeedKmh: 365,
 } as const;
 
 /** Arcade yaw blend toward limited steer rate (same in every mode). */
 export const PLAYER_STEER_YAW_SMOOTH = {
-  keep: 0.22, // less lag — held steer stays authoritative
-  apply: 0.78, // snappier yaw response (QR/TT shared)
-  /** Extra snap while |steer| near full lock so long L/R holds do not understeer away */
-  fullKeep: 0.12,
-  fullApply: 0.88,
+  keep: 0.38, // balanced — between old soft 0.58 and extreme 0.22
+  apply: 0.62, // balanced — between old soft 0.42 and extreme 0.78
+  /** Mild full-lock bias so held L/R still bites without snap-spin */
+  fullKeep: 0.30,
+  fullApply: 0.70,
 } as const;
 
 const GEAR_RATIOS = [0, 3.2, 2.4, 1.9, 1.55, 1.3, 1.12, 0.98, 0.88];
@@ -212,7 +212,7 @@ export class VehiclePhysics {
     let brakeForce = 0;
     const mainBrake = input.brake;
     const engBrake = input.engineBrake * 0.25;
-    const maxBrake = this.cfg.mass * 9.81 * grip * 1.4;
+    const maxBrake = this.cfg.mass * 9.81 * grip * 1.6; // ~14% stronger player brakes
     brakeForce = (mainBrake + engBrake) * maxBrake;
     state.wheelLock = false;
     if (mainBrake > 0.85 && !this.assists.abs && state.speed > 8) {
@@ -240,18 +240,18 @@ export class VehiclePhysics {
     if (Math.abs(state.speed) < 0.05 && mainBrake > 0.1) state.speed = 0;
     if (state.gear !== -1 && state.speed < -0.5) state.speed = 0;
 
-    // Steering — arcade snappy turn-in (A left / D right). Sustained full L/R
-    // keeps yaw authority (no understeer fade from grip starve / smoothing).
-    const maxSteer = 0.92 / (1 + Math.abs(state.speed) / 68);
+    // Steering — middle-ground arcade (A left / D right). Softened from extreme
+    // full-lock snap; still sharper than the old understeer-heavy setup. QR=TT.
+    const maxSteer = 0.78 / (1 + Math.abs(state.speed) / 55);
     const steerAngle = input.steer * maxSteer;
-    const latGripBudget = grip * (1 + downforce / (this.cfg.mass * 9.81)) * 1.18;
+    const latGripBudget = grip * (1 + downforce / (this.cfg.mass * 9.81)) * 1.05;
     const yawRate = (state.speed / Math.max(0.1, this.cfg.wheelbase)) * Math.tan(steerAngle);
     const maxYaw = latGripBudget * 9.81 / Math.max(1, Math.abs(state.speed));
     let limitedYaw = Math.max(-maxYaw, Math.min(maxYaw, yawRate));
     const fullLock = Math.abs(input.steer) > 0.92;
-    // Held full lock: soft-cap only — do not starve commanded yawRate
+    // Mild full-lock assist — less aggressive than prior 0.25/0.75 blend
     if (fullLock && Math.abs(yawRate) > Math.abs(limitedYaw)) {
-      limitedYaw = limitedYaw * 0.25 + yawRate * 0.75;
+      limitedYaw = limitedYaw * 0.45 + yawRate * 0.55;
     }
     if (state.wheelLock) {
       state.angularVel = state.angularVel * 0.95 + limitedYaw * 0.25;
@@ -276,11 +276,10 @@ export class VehiclePhysics {
       state.rpm = Math.max(IDLE_RPM * 0.7, Math.min(MAX_RPM, state.rpm));
     }
 
-    // Fuel burn — balanced so 2–3 lap Monaco does not empty instantly.
-    // Full throttle ≈ 0.0028/s → ~6 min tank; typical race pace lasts 3+ laps.
+    // Fuel burn — hold ~6 min tank despite higher peak power (do not empty faster).
     if (!outOfFuel) {
       const burn =
-        (0.00055 + input.throttle * 0.00225 + (ersBoost > 0 ? 0.0004 : 0)) * dt;
+        (0.0005 + input.throttle * 0.00205 + (ersBoost > 0 ? 0.00035 : 0)) * dt;
       state.fuel = Math.max(0, state.fuel - burn);
     } else {
       state.fuel = 0;

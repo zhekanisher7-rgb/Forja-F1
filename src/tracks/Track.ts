@@ -542,16 +542,16 @@ export function sampleTerrainHeight(pts: TrackPoint[], x: number, z: number, mon
   // Soft blend from track shoulder into surrounding terrain.
   // On-asphalt: sink well below every nearby ribbon so grass/heightfield never z-fights
   // asphalt (Interlagos hills, Suzuka figure-8 lower deck, Monaco Noghes).
-  const underAsphalt = bestClear < 0.55;
-  const nearShoulder = bestClear < 3.5;
-  const sink = underAsphalt ? 0.22 : nearShoulder ? 0.12 : 0.08;
+  const underAsphalt = bestClear < 0.75;
+  const nearShoulder = bestClear < 4.5;
+  const sink = underAsphalt ? 0.34 : nearShoulder ? 0.18 : 0.1;
   const edge = Math.max(0, bestClear);
   const u = Math.min(1, edge / corridor);
   const s = u * u * (3 - 2 * u);
   let nearY = trackGroundY - sink;
   // Hard ceiling: terrain must stay under the lowest nearby ribbon inside the corridor
-  if (found && Number.isFinite(minNearbyY) && bestClear < 14) {
-    const ceiling = minNearbyY - (underAsphalt ? 0.2 : 0.1);
+  if (found && Number.isFinite(minNearbyY) && bestClear < 16) {
+    const ceiling = minNearbyY - (underAsphalt ? 0.3 : 0.16);
     nearY = Math.min(nearY, ceiling);
   }
   return nearY * (1 - s) + base * s;
