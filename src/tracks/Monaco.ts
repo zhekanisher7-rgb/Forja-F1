@@ -9,7 +9,7 @@
  */
 import { buildCenterline, trackLength, type TrackData } from './Track';
 
-const ROAD_WIDTH_SCALE = 1.65;
+const ROAD_WIDTH_SCALE = 2.05;
 
 /** Handcrafted centerline approximating Monaco with vertical profile */
 const RAW: { x: number; z: number; y?: number; width?: number }[] = [
@@ -96,10 +96,11 @@ export function createMonacoTrack(): TrackData {
       { startS: length * 0.52, endS: length * 0.60 },
     ],
     gravel: [
-      { x: 95, z: 250, w: 18, d: 12, rot: 0.4, y: 0.8 },
-      { x: 220, z: 400, w: 14, d: 10, rot: -0.3, y: 6 },
-      { x: 230, z: -100, w: 20, d: 14, rot: 0.1, y: 0 },
-      { x: -55, z: 40, w: 16, d: 12, rot: 0.6, y: 2.5 },
+      // Kept clear of asphalt (+margin) after ROAD_WIDTH_SCALE bump
+      { x: 55, z: 290, w: 14, d: 10, rot: 0.4, y: 0.8 },
+      { x: 260, z: 440, w: 12, d: 9, rot: -0.3, y: 6 },
+      { x: 270, z: -140, w: 16, d: 12, rot: 0.1, y: 0 },
+      { x: -15, z: 80, w: 12, d: 10, rot: 0.6, y: 2.5 },
     ],
     startIndex: 0,
   };

@@ -426,6 +426,7 @@ export class Game {
       this.vehicle.x,
       this.vehicle.z,
       this.vehicle.distanceAlong,
+      this.vehicle.y,
     );
     const halfW = proj.width / 2;
     let wallHit = 0;
@@ -460,9 +461,18 @@ export class Game {
       this.vehicle.x,
       this.vehicle.z,
       this.vehicle.distanceAlong,
+      this.vehicle.y,
     );
-    this.vehicle.y = elev.y;
-    this.vehicle.pitch = elev.pitch;
+    // Refuse sudden deck teleports (>~2 m) — projectOnTrack already penalizes, but
+    // clamp here too so a bad sample cannot yank the car onto the overpass.
+    const dy = elev.y - this.vehicle.y;
+    if (Math.abs(dy) > 2.0 && Math.abs(elev.pitch) < 0.05) {
+      // stay on current height; keep s/lateral from elev for lap logic
+      this.vehicle.pitch = this.vehicle.pitch * 0.85;
+    } else {
+      this.vehicle.y = elev.y;
+      this.vehicle.pitch = elev.pitch;
+    }
 
     const s = elev.s;
     const total = this.track.length;

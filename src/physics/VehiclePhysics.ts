@@ -215,8 +215,10 @@ export class VehiclePhysics {
     if (Math.abs(state.speed) < 0.05 && mainBrake > 0.1) state.speed = 0;
     if (state.gear !== -1 && state.speed < -0.5) state.speed = 0;
 
-    // Steering — speed-sensitive
-    const maxSteer = 0.55 / (1 + Math.abs(state.speed) / 28);
+    // Steering — speed-sensitive.
+    // Input: A=−1 (left), D=+1 (right). Positive yaw = screen-right when facing +Z,
+    // so negative steerAngle (A) turns LEFT as required.
+    const maxSteer = 0.48 / (1 + Math.abs(state.speed) / 30);
     const steerAngle = input.steer * maxSteer;
     const latGripBudget = grip * (1 + downforce / (this.cfg.mass * 9.81)) * 0.9;
     const yawRate = (state.speed / Math.max(0.1, this.cfg.wheelbase)) * Math.tan(steerAngle);
@@ -224,9 +226,10 @@ export class VehiclePhysics {
     const maxYaw = latGripBudget * 9.81 / Math.max(1, Math.abs(state.speed));
     const limitedYaw = Math.max(-maxYaw, Math.min(maxYaw, yawRate));
     if (state.wheelLock) {
-      state.angularVel = state.angularVel * 0.95 + limitedYaw * 0.3;
+      state.angularVel = state.angularVel * 0.95 + limitedYaw * 0.25;
     } else {
-      state.angularVel = limitedYaw;
+      // Soft yaw lerp — less twitchy steering response
+      state.angularVel = state.angularVel * 0.72 + limitedYaw * 0.28;
     }
     state.yaw += state.angularVel * dt;
 

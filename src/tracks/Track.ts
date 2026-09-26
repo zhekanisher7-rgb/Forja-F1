@@ -193,18 +193,23 @@ function sDelta(a: number, b: number, total: number): number {
  * Closest point on polyline; returns distance along, lateral offset, tangent yaw, elevation.
  * preferredS disambiguates stacked overpasses (same XZ, different Y) by staying on the
  * ribbon the car was already following.
+ * preferredY refuses snapping to a deck ~2m+ above/below unless we are clearly climbing
+ * a ramp (continuous s + steep pitch).
  */
 export function projectOnTrack(
   pts: TrackPoint[],
   x: number,
   z: number,
   preferredS?: number,
+  preferredY?: number,
 ): { s: number; lateral: number; yaw: number; width: number; idx: number; y: number; pitch: number } {
   let bestDist = Infinity;
   let bestScore = Infinity;
   let best = { s: 0, lateral: 0, yaw: 0, width: 10, idx: 0, y: 0, pitch: 0 };
   const n = pts.length;
   const total = trackLength(pts) || 1;
+  const MAX_Y_JUMP = 2.0;
+
   for (let i = 0; i < n - 1; i++) {
     const a = pts[i];
     const b = pts[i + 1];
@@ -218,22 +223,44 @@ export function projectOnTrack(
     const pz = a.z + dz * t;
     const dist = Math.hypot(x - px, z - pz);
     const s = a.s + (b.s - a.s) * t;
-    // Prefer nearer XZ; within ~4m of the best, prefer continuity along preferredS
-    const cont = preferredS === undefined ? 0 : sDelta(s, preferredS, total) * 0.02;
-    const score = dist + cont;
-    const clearlyCloser = dist < bestDist - 1.5;
-    const better = clearlyCloser || (dist <= bestDist + 1.5 && score < bestScore);
+    const y = a.y + (b.y - a.y) * t;
+    const horiz = Math.hypot(dx, dz) || 1;
+    const pitch = Math.atan2(b.y - a.y, horiz);
+
+    // Continuity along track length
+    const cont = preferredS === undefined ? 0 : sDelta(s, preferredS, total) * 0.025;
+
+    // Height preference — stay on current deck under overpasses
+    let yPenalty = 0;
+    if (preferredY !== undefined) {
+      const dy = Math.abs(y - preferredY);
+      if (dy > MAX_Y_JUMP) {
+        const alongOk =
+          preferredS !== undefined && sDelta(s, preferredS, total) < 35;
+        const climbing = alongOk && Math.abs(pitch) > 0.045 && dy < 5.5;
+        if (!climbing) {
+          // Hard-reject wrong deck (e.g. upper swimming-pool while on S/F)
+          yPenalty = 80 + dy * 8;
+        } else {
+          yPenalty = dy * 0.15; // soft — allowing ramp climb
+        }
+      } else {
+        yPenalty = dy * 0.35; // mild preference for matching height
+      }
+    }
+
+    const score = dist + cont + yPenalty;
+    const clearlyCloser = dist + yPenalty < bestDist - 1.2;
+    const better =
+      clearlyCloser || (dist <= bestDist + 2.5 && score < bestScore);
     if (better) {
-      bestDist = Math.min(bestDist, dist);
+      bestDist = Math.min(bestDist, dist + yPenalty * 0.05);
       bestScore = score;
       const yaw = Math.atan2(dx, dz);
       const nx = x - px;
       const nz = z - pz;
       const lateral = nx * Math.cos(yaw) - nz * Math.sin(yaw);
       const width = a.width + (b.width - a.width) * t;
-      const y = a.y + (b.y - a.y) * t;
-      const horiz = Math.hypot(dx, dz) || 1;
-      const pitch = Math.atan2(b.y - a.y, horiz);
       best = { s, lateral, yaw, width, idx: i, y, pitch };
     }
   }

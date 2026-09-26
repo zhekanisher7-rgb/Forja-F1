@@ -186,6 +186,8 @@ export function createTrackMesh(
 
   const gravelMat = new THREE.MeshStandardMaterial({ color: 0xb8a078, metalness: 0.08, roughness: 1 });
   for (const g of track.gravel) {
+    // Never lay runoff patches on driveable asphalt
+    if (!boxClearsRibbon(pts, g.x, g.z, g.w, g.d, 1.5)) continue;
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(g.w, g.d), gravelMat);
     mesh.rotation.x = -Math.PI / 2;
     mesh.rotation.z = g.rot;
@@ -224,21 +226,22 @@ export function createTrackMesh(
 
   addTunnel(root, pts, 0.48, 0.58, quality);
   addOverpassSupports(root, pts, quality);
-  addHarbor(root, quality);
+  addHarbor(root, pts, quality);
   addScenery(root, pts, left, right, quality, night);
 
-  // Start/finish stripe — clearly above asphalt, no coplanar z-fight at loop join
+  // Start/finish stripe — thin decal only (never a thick grey box on asphalt)
   const sfMat = new THREE.MeshStandardMaterial({
     color: 0xffffff,
     roughness: 0.75,
     polygonOffset: true,
     polygonOffsetFactor: -2,
     polygonOffsetUnits: -2,
+    depthWrite: false,
   });
-  const sf = new THREE.Mesh(new THREE.PlaneGeometry(pts[0].width * 0.92, 2.0), sfMat);
+  const sf = new THREE.Mesh(new THREE.PlaneGeometry(pts[0].width * 0.92, 1.6), sfMat);
   sf.rotation.x = -Math.PI / 2;
   const yaw0 = Math.atan2(pts[1].x - pts[0].x, pts[1].z - pts[0].z);
-  sf.position.set(pts[0].x, pts[0].y + 0.09, pts[0].z);
+  sf.position.set(pts[0].x, pts[0].y + 0.055, pts[0].z);
   sf.rotation.z = -yaw0;
   sf.renderOrder = 2;
   root.add(sf);
@@ -644,7 +647,29 @@ function findCrossingSpans(pts: TrackPoint[]): CrossingSpan[] {
   return spans;
 }
 
-function addHarbor(root: THREE.Group, quality: QualityProfile): void {
+
+/** True if an axis-aligned XZ box stays outside all asphalt ribbons (+ margin). */
+function boxClearsRibbon(
+  pts: TrackPoint[],
+  cx: number,
+  cz: number,
+  w: number,
+  d: number,
+  margin: number,
+  samples = 10,
+): boolean {
+  for (let i = 0; i <= samples; i++) {
+    for (let j = 0; j <= samples; j++) {
+      const x = cx - w / 2 + (w * i) / samples;
+      const z = cz - d / 2 + (d * j) / samples;
+      const { clearance } = nearestEdgeClearance(pts, x, z);
+      if (clearance < margin) return false;
+    }
+  }
+  return true;
+}
+
+function addHarbor(root: THREE.Group, pts: TrackPoint[], quality: QualityProfile): void {
   // Cheap water — Basic + slight transparency (no expensive specular shader)
   const waterMat = new THREE.MeshBasicMaterial({
     color: 0x1a6a8a,
@@ -660,16 +685,21 @@ function addHarbor(root: THREE.Group, quality: QualityProfile): void {
   const quayMat = quality.useLambertScenery
     ? new THREE.MeshLambertMaterial({ color: 0x8a8e96 })
     : new THREE.MeshStandardMaterial({ color: 0x8a8e96, roughness: 0.7, metalness: 0.15 });
-  const quay = new THREE.Mesh(new THREE.BoxGeometry(260, 1.2, 14), quayMat);
-  quay.position.set(220, 0.55, 42);
-  quay.receiveShadow = true;
-  quay.castShadow = quality.sceneryCastShadow;
-  root.add(quay);
-  // Extra quay apron so harbor props / lamps have ground under them
-  const apron = new THREE.Mesh(new THREE.BoxGeometry(200, 0.5, 28), quayMat);
-  apron.position.set(210, 0.2, 28);
-  apron.receiveShadow = true;
-  root.add(apron);
+
+  // Harbor quay / apron — MUST stay off every driving ribbon (old 260×14 slab at
+  // z=42 cut through Tabac). Place inside the loop toward the water, thin height.
+  const quaySpecs: { x: number; z: number; w: number; d: number; h: number; y: number }[] = [
+    { x: 245, z: -5, w: 100, d: 10, h: 0.55, y: 0.22 },
+    { x: 255, z: -18, w: 70, d: 12, h: 0.4, y: 0.15 },
+  ];
+  for (const q of quaySpecs) {
+    if (!boxClearsRibbon(pts, q.x, q.z, q.w, q.d, 3.5)) continue;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(q.w, q.h, q.d), quayMat);
+    mesh.position.set(q.x, q.y, q.z);
+    mesh.receiveShadow = true;
+    mesh.castShadow = quality.sceneryCastShadow;
+    root.add(mesh);
+  }
 
   // 2 boats only (was 4) — less clutter / draw calls
   const hullMat = quality.useLambertScenery
@@ -679,8 +709,9 @@ function addHarbor(root: THREE.Group, quality: QualityProfile): void {
     ? new THREE.MeshLambertMaterial({ color: 0x2a4060 })
     : new THREE.MeshStandardMaterial({ color: 0x2a4060, roughness: 0.35, metalness: 0.4 });
   const boats: [number, number, number][] = [
-    [180, -70, 0.4],
-    [250, -30, -0.6],
+    // On water south of chicane / quay — must clear asphalt ribbon
+    [200, -120, 0.4],
+    [255, -110, -0.6],
   ];
   for (const [bx, bz, rot] of boats) {
     const hull = new THREE.Mesh(new THREE.BoxGeometry(14, 2.2, 4), hullMat);

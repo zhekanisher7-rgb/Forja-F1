@@ -130,7 +130,7 @@ export function updateAICar(ai: AICar, track: TrackData, dt: number): void {
   const speed = Math.abs(v.speed);
 
   const input = emptyInput();
-  // Steer — proportional with skill damping
+  // Steer — proportional; positive yawErr (need right) → positive steer → +yaw.
   input.steer = Math.max(-1, Math.min(1, yawErr * (1.6 + skill * 0.8)));
 
   if (speed > cornerMax + 2) {
@@ -171,10 +171,14 @@ export function updateAICar(ai: AICar, track: TrackData, dt: number): void {
   ai.physics.step(v, input, dt, wallHit);
 
   // Re-project s / elevation from position for lap consistency
-  const projS = projectS(track, v.x, v.z, v.distanceAlong);
+  const projS = projectS(track, v.x, v.z, v.distanceAlong, v.y);
   v.distanceAlong = projS.s;
-  v.y = projS.y;
-  v.pitch = projS.pitch;
+  if (Math.abs(projS.y - v.y) > 2.0 && Math.abs(projS.pitch) < 0.05) {
+    /* stay on lower deck under overpass */
+  } else {
+    v.y = projS.y;
+    v.pitch = projS.pitch;
+  }
 
   // Sync mesh
   ai.mesh.position.set(v.x, v.y, v.z);
@@ -189,19 +193,23 @@ function projectS(
   x: number,
   z: number,
   preferredS: number,
+  preferredY = 0,
 ): { s: number; y: number; pitch: number } {
-  // Lightweight local search around preferredS
+  // Local search around preferredS; prefer matching height under overpasses
   const total = track.length || 1;
-  let bestDist = Infinity;
-  let best = { s: preferredS, y: 0, pitch: 0 };
-  const start = Math.max(0, preferredS - 40);
+  let bestScore = Infinity;
+  let best = { s: preferredS, y: preferredY, pitch: 0 };
+  const start = preferredS - 40;
   const end = preferredS + 60;
   for (let s = start; s <= end; s += 3) {
     const ss = ((s % total) + total) % total;
     const p = sampleTrack(track.points, ss);
     const d = Math.hypot(x - p.x, z - p.z);
-    if (d < bestDist) {
-      bestDist = d;
+    const dy = Math.abs(p.y - preferredY);
+    const yPen = dy > 2.0 ? 50 + dy * 6 : dy * 0.4;
+    const score = d + yPen;
+    if (score < bestScore) {
+      bestScore = score;
       best = { s: ss, y: p.y, pitch: p.pitch };
     }
   }

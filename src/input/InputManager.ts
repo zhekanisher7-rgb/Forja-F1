@@ -35,8 +35,9 @@ export class InputManager {
   }
 
   update(dt: number): InputState {
-    const ramp = 3.5;
-    const steerRamp = 4.5;
+    // Slower analog ramps = smoother throttle / steering feel
+    const throttleRamp = 2.4;
+    const steerRamp = 2.2;
 
     const wantGas = KEYS['KeyW'] || KEYS['ArrowUp'];
     const wantBrake = KEYS['ShiftLeft'] || KEYS['ShiftRight'];
@@ -44,14 +45,15 @@ export class InputManager {
     const wantLeft = KEYS['KeyA'] || KEYS['ArrowLeft'];
     const wantRight = KEYS['KeyD'] || KEYS['ArrowRight'];
 
-    this.throttle = approach(this.throttle, wantGas ? 1 : 0, ramp * dt);
-    this.brake = approach(this.brake, wantBrake ? 1 : 0, 5 * dt);
-    this.engineBrake = approach(this.engineBrake, wantEngineBrake ? 1 : 0, 4 * dt);
+    this.throttle = lerpToward(this.throttle, wantGas ? 1 : 0, 1 - Math.exp(-throttleRamp * dt));
+    this.brake = lerpToward(this.brake, wantBrake ? 1 : 0, 1 - Math.exp(-5.5 * dt));
+    this.engineBrake = lerpToward(this.engineBrake, wantEngineBrake ? 1 : 0, 1 - Math.exp(-4.0 * dt));
 
+    // A = LEFT (−1), D = RIGHT (+1).
     let steerTarget = 0;
     if (wantLeft) steerTarget -= 1;
     if (wantRight) steerTarget += 1;
-    this.steer = approach(this.steer, steerTarget, steerRamp * dt);
+    this.steer = lerpToward(this.steer, steerTarget, 1 - Math.exp(-steerRamp * dt));
 
     const camDown = KEYS['KeyC'];
     this.cameraEdge = camDown && !this.cameraPressed;
@@ -77,7 +79,8 @@ export class InputManager {
   }
 }
 
-function approach(current: number, target: number, maxDelta: number): number {
-  if (current < target) return Math.min(current + maxDelta, target);
-  return Math.max(current - maxDelta, target);
+/** Exponential smoothing toward target (factor in 0..1). */
+function lerpToward(current: number, target: number, factor: number): number {
+  const f = Math.max(0, Math.min(1, factor));
+  return current + (target - current) * f;
 }
