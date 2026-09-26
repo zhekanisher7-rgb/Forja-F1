@@ -37,13 +37,13 @@ const DIFF_LABELS: Record<Difficulty, string> = {
 };
 
 const TIER_LABELS: Record<GraphicsTier, string> = {
-  ultra: 'Ультра-низкое (экстр. FPS)',
   low: 'Низкое (макс. FPS)',
-  medium: 'Среднее (~60 FPS)',
-  high: 'Высокое (тени)',
+  medium: 'Среднее (~60 FPS, мягкие тени)',
+  high: 'Высокое (тени + пост)',
+  ultra: 'Ультра (максимум)',
 };
 
-const TIER_ORDER: GraphicsTier[] = ['ultra', 'low', 'medium', 'high'];
+const TIER_ORDER: GraphicsTier[] = ['low', 'medium', 'high', 'ultra'];
 
 export class MainMenu {
   el: HTMLDivElement;
@@ -196,9 +196,10 @@ export class MainMenu {
             </select>
           </div>
           <p class="hint" style="color:var(--f1-muted);font-size:0.8rem;margin-top:0.75rem;line-height:1.4">
-            Среднее/Низкое: pixelRatio≤1, тени выкл., InstancedMesh-декор — цель 50–60 FPS.<br/>
-            Ультра-низкое: минимум декора и короткий туман, если FPS всё ещё низкий.<br/>
-            Высокое: тени (маленькая карта), pixelRatio≤1.25. Вкл. «Счётчик FPS» для проверки.<br/>
+            Низкое: без теней, лёгкий декор — максимум FPS.<br/>
+            Среднее (по умолч.): мягкие тени машин, без пост-эффектов — цель ~60 FPS.<br/>
+            Высокое: тени декора + лёгкий bloom/виньетка, бликующая вода.<br/>
+            Ультра: крупнее тени, анимация воды, сильнее пост. Вкл. «Счётчик FPS» для проверки.<br/>
             Новичок: ABS, TC и гоночная линия. Симулятор: без ассистов.
           </p>
           <button class="menu-btn" data-a="save-settings">Сохранить</button>

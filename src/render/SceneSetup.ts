@@ -16,11 +16,11 @@ export function createRenderer(
     canvas,
     antialias: p.antialias,
     powerPreference: 'high-performance',
+    // Preserve for post FX readback when High/Ultra
+    stencil: false,
   });
   applyRendererQuality(renderer, tier);
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.28;
   return renderer;
 }
 
@@ -31,36 +31,51 @@ function makeSkyTexture(wet: boolean, night: boolean): THREE.CanvasTexture {
   const ctx = c.getContext('2d')!;
   const g = ctx.createLinearGradient(0, 0, 0, 512);
   if (night) {
-    g.addColorStop(0, '#050814');
-    g.addColorStop(0.4, '#0a1528');
-    g.addColorStop(0.75, '#152038');
-    g.addColorStop(1, '#1a2838');
+    g.addColorStop(0, '#03060e');
+    g.addColorStop(0.35, '#0a1428');
+    g.addColorStop(0.7, '#152038');
+    g.addColorStop(1, '#1c2a3c');
   } else if (wet) {
     g.addColorStop(0, '#2a3548');
     g.addColorStop(0.4, '#4a5568');
     g.addColorStop(0.75, '#6a7080');
     g.addColorStop(1, '#7a8088');
   } else {
-    g.addColorStop(0, '#1a4a8a');
-    g.addColorStop(0.35, '#3a7ab8');
-    g.addColorStop(0.55, '#6aa8d8');
-    g.addColorStop(0.78, '#b8d4ec');
-    g.addColorStop(1, '#e8f0f8');
+    // Monaco midday / early afternoon — deep Mediterranean blue → warm horizon haze
+    g.addColorStop(0, '#0e3a7a');
+    g.addColorStop(0.28, '#2a6eb8');
+    g.addColorStop(0.5, '#5a9fd0');
+    g.addColorStop(0.72, '#b8d4ec');
+    g.addColorStop(0.88, '#e8dcc8');
+    g.addColorStop(1, '#f0e8d8');
   }
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, 512, 512);
 
-  const cloudCount = night ? 4 : wet ? 8 : 18;
+  // Soft sun glow disc (day)
+  if (!night && !wet) {
+    const sun = ctx.createRadialGradient(380, 120, 4, 380, 120, 90);
+    sun.addColorStop(0, 'rgba(255,250,230,0.95)');
+    sun.addColorStop(0.25, 'rgba(255,230,180,0.45)');
+    sun.addColorStop(0.55, 'rgba(255,210,140,0.12)');
+    sun.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = sun;
+    ctx.beginPath();
+    ctx.arc(380, 120, 90, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const cloudCount = night ? 4 : wet ? 10 : 16;
   for (let i = 0; i < cloudCount; i++) {
     const cx = Math.random() * 512;
-    const cy = 280 + Math.random() * 160;
+    const cy = 260 + Math.random() * 170;
     const rx = 40 + Math.random() * 90;
     const ry = 12 + Math.random() * 28;
     const alpha = night
       ? 0.06 + Math.random() * 0.08
       : wet
-        ? 0.12 + Math.random() * 0.12
-        : 0.18 + Math.random() * 0.28;
+        ? 0.14 + Math.random() * 0.14
+        : 0.12 + Math.random() * 0.22;
     const grd = ctx.createRadialGradient(cx, cy, 2, cx, cy, rx);
     grd.addColorStop(0, `rgba(255,255,255,${alpha})`);
     grd.addColorStop(0.55, `rgba(240,245,255,${alpha * 0.55})`);
@@ -74,10 +89,9 @@ function makeSkyTexture(wet: boolean, night: boolean): THREE.CanvasTexture {
     ctx.fill();
   }
 
-  // Night stars
   if (night) {
-    for (let i = 0; i < 120; i++) {
-      ctx.fillStyle = `rgba(255,255,255,${0.4 + Math.random() * 0.6})`;
+    for (let i = 0; i < 140; i++) {
+      ctx.fillStyle = `rgba(255,255,255,${0.35 + Math.random() * 0.65})`;
       ctx.fillRect(Math.random() * 512, Math.random() * 260, 1.2, 1.2);
     }
   }
@@ -89,43 +103,45 @@ function makeSkyTexture(wet: boolean, night: boolean): THREE.CanvasTexture {
   return tex;
 }
 
-export function makeEnvCubemap(wet: boolean, night = false): THREE.CubeTexture {
+export function makeEnvCubemap(
+  wet: boolean,
+  night = false,
+  faceSize = 128,
+): THREE.CubeTexture {
+  const size = Math.max(64, Math.min(256, faceSize));
   const faces: HTMLCanvasElement[] = [];
   const cols = night
     ? ['#0a1528', '#0a1528', '#1a2840', '#0a1010', '#0a1528', '#0a1528']
     : wet
       ? ['#5a6578', '#5a6578', '#8899aa', '#2a3030', '#5a6578', '#5a6578']
-      : ['#5a98d0', '#5a98d0', '#d0e8fc', '#3a5a28', '#6aa8d8', '#6aa8d8'];
+      : ['#4a90c8', '#4a90c8', '#e8f0fc', '#2a4a20', '#5aa0d0', '#5aa0d0'];
   for (let f = 0; f < 6; f++) {
     const c = document.createElement('canvas');
-    // 128² — sharper car reflections without heavy GPU cost
-    c.width = 128;
-    c.height = 128;
+    c.width = size;
+    c.height = size;
     const ctx = c.getContext('2d')!;
-    const g = ctx.createLinearGradient(0, 0, 0, 128);
+    const g = ctx.createLinearGradient(0, 0, 0, size);
     g.addColorStop(0, cols[f]);
     g.addColorStop(0.55, f === 2 ? cols[2] : cols[f]);
     g.addColorStop(1, f === 3 ? '#2a3a20' : cols[2]);
     ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 128, 128);
+    ctx.fillRect(0, 0, size, size);
     if (f !== 3 && !night) {
-      // Soft sun disc for specular highlights on bodywork
-      const sun = ctx.createRadialGradient(64, 36, 2, 64, 36, 28);
-      sun.addColorStop(0, 'rgba(255,250,230,0.85)');
-      sun.addColorStop(0.35, 'rgba(255,240,200,0.35)');
+      const sun = ctx.createRadialGradient(size * 0.5, size * 0.28, 2, size * 0.5, size * 0.28, size * 0.22);
+      sun.addColorStop(0, 'rgba(255,250,230,0.9)');
+      sun.addColorStop(0.35, 'rgba(255,240,200,0.4)');
       sun.addColorStop(1, 'rgba(255,255,255,0)');
       ctx.fillStyle = sun;
       ctx.beginPath();
-      ctx.arc(64, 36, 28, 0, Math.PI * 2);
+      ctx.arc(size * 0.5, size * 0.28, size * 0.22, 0, Math.PI * 2);
       ctx.fill();
-      // Horizon haze band
-      ctx.fillStyle = 'rgba(255,255,255,0.08)';
-      ctx.fillRect(0, 70, 128, 22);
+      ctx.fillStyle = 'rgba(255,255,255,0.1)';
+      ctx.fillRect(0, size * 0.55, size, size * 0.18);
     }
     if (night && f !== 3) {
       for (let i = 0; i < 40; i++) {
         ctx.fillStyle = `rgba(255,255,255,${0.3 + Math.random() * 0.7})`;
-        ctx.fillRect(Math.random() * 128, Math.random() * 70, 1.5, 1.5);
+        ctx.fillRect(Math.random() * size, Math.random() * size * 0.55, 1.5, 1.5);
       }
     }
     faces.push(c);
@@ -139,7 +155,7 @@ export function makeEnvCubemap(wet: boolean, night = false): THREE.CubeTexture {
 function addSkyDome(scene: THREE.Scene, weather: WeatherState, night: boolean): THREE.Mesh {
   const wet = weather.type === 'wet';
   const tex = makeSkyTexture(wet, night);
-  const geo = new THREE.SphereGeometry(900, 24, 12);
+  const geo = new THREE.SphereGeometry(900, 32, 16);
   geo.scale(-1, 1, 1);
   const mat = new THREE.MeshBasicMaterial({ map: tex, depthWrite: false });
   const dome = new THREE.Mesh(geo, mat);
@@ -156,31 +172,33 @@ export function createScene(
 ): THREE.Scene {
   const scene = new THREE.Scene();
   const p = profileFor(tier);
-  const fogColor = night ? 0x0a1528 : weather.type === 'wet' ? 0x5a6578 : 0x87b8e0;
+  // Cool Mediterranean haze — slightly desaturated blue
+  const fogColor = night ? 0x0a1528 : weather.type === 'wet' ? 0x5a6578 : 0x8ab4d8;
   scene.fog = new THREE.Fog(fogColor, night ? 45 : p.fogNear, night ? 220 : p.fogFar);
   scene.background = new THREE.Color(fogColor);
-  scene.environment = makeEnvCubemap(weather.type === 'wet', night);
+  scene.environment = makeEnvCubemap(weather.type === 'wet', night, p.envMapSize);
 
   addSkyDome(scene, weather, night);
 
   const hemi = new THREE.HemisphereLight(
-    night ? 0x334466 : weather.type === 'wet' ? 0x8899aa : 0xd0e4ff,
-    night ? 0x0a1018 : weather.type === 'wet' ? 0x2a3030 : 0x3a4a28,
-    night ? 0.22 : weather.type === 'wet' ? 0.45 : 0.78,
+    night ? 0x334466 : weather.type === 'wet' ? 0x8899aa : 0xd8e8ff,
+    night ? 0x0a1018 : weather.type === 'wet' ? 0x2a3030 : 0x4a5a32,
+    night ? 0.28 : weather.type === 'wet' ? 0.5 : 0.92,
   );
   hemi.name = 'hemi';
   scene.add(hemi);
 
   const sun = new THREE.DirectionalLight(
-    night ? 0xaabbff : 0xfff2d8,
-    night ? 0.25 : weather.type === 'wet' ? 0.55 : 1.55,
+    night ? 0xaabbff : 0xfff0d0,
+    night ? 0.28 : weather.type === 'wet' ? 0.6 : p.sunIntensity,
   );
   sun.name = 'sun';
-  sun.position.set(80, 120, 40);
-  sun.shadow.bias = -0.00012;
-  sun.shadow.normalBias = 0.025;
+  // Afternoon angle — longer soft shadows along the harbor
+  sun.position.set(95, 105, 55);
+  sun.shadow.bias = -0.00015;
+  sun.shadow.normalBias = 0.03;
   sun.shadow.camera.near = 5;
-  sun.shadow.camera.far = 200;
+  sun.shadow.camera.far = 220;
   sun.shadow.camera.left = -50;
   sun.shadow.camera.right = 50;
   sun.shadow.camera.top = 50;
@@ -189,19 +207,28 @@ export function createScene(
   scene.add(sun);
   scene.add(sun.target);
 
+  // Cool fill from harbor side — lifts shadow side of cars / asphalt
   const fill = new THREE.DirectionalLight(
-    night ? 0x4466aa : 0x88aaff,
-    night ? 0.12 : weather.type === 'wet' ? 0.18 : 0.35,
+    night ? 0x4466aa : 0x88b0ff,
+    night ? 0.14 : weather.type === 'wet' ? 0.22 : 0.42,
   );
   fill.name = 'fill';
-  fill.position.set(-50, 40, -70);
+  fill.position.set(-60, 45, -80);
   scene.add(fill);
 
-  const amb = new THREE.AmbientLight(night ? 0x1a2030 : 0x404850, night ? 0.28 : 0.16);
+  // Warm bounce from sunlit buildings / asphalt
+  const bounce = new THREE.DirectionalLight(
+    night ? 0x223344 : 0xffd8a8,
+    night ? 0.06 : weather.type === 'wet' ? 0.1 : 0.22,
+  );
+  bounce.name = 'bounce';
+  bounce.position.set(30, 12, -40);
+  scene.add(bounce);
+
+  const amb = new THREE.AmbientLight(night ? 0x1a2030 : 0x485058, night ? 0.3 : 0.14);
   amb.name = 'amb';
   scene.add(amb);
 
-  // Store night flag for later updates
   (scene.userData as { night?: boolean; tier?: GraphicsTier }).night = night;
   (scene.userData as { night?: boolean; tier?: GraphicsTier }).tier = tier;
 
@@ -212,7 +239,7 @@ export function updateSunFollow(scene: THREE.Scene, x: number, z: number): void 
   const sun = scene.getObjectByName('sun') as THREE.DirectionalLight | undefined;
   if (!sun) return;
   sun.target.position.set(x, 0, z);
-  sun.position.set(x + 55, 115, z + 40);
+  sun.position.set(x + 70, 100, z + 48);
   sun.target.updateMatrixWorld();
 }
 
@@ -224,7 +251,7 @@ export function applyWeatherVisuals(
 ): void {
   const t = tier ?? ((scene.userData as { tier?: GraphicsTier }).tier || 'medium');
   const p = profileFor(t);
-  const fogColor = night ? 0x0a1528 : weather.type === 'wet' ? 0x5a6578 : 0x87b8e0;
+  const fogColor = night ? 0x0a1528 : weather.type === 'wet' ? 0x5a6578 : 0x8ab4d8;
   scene.background = new THREE.Color(fogColor);
   if (scene.fog && (scene.fog as THREE.Fog).isFog) {
     const f = scene.fog as THREE.Fog;
@@ -232,7 +259,7 @@ export function applyWeatherVisuals(
     f.near = night ? 45 : p.fogNear;
     f.far = night ? 220 : p.fogFar;
   }
-  scene.environment = makeEnvCubemap(weather.type === 'wet', night);
+  scene.environment = makeEnvCubemap(weather.type === 'wet', night, p.envMapSize);
 
   const old = scene.getObjectByName('skyDome');
   if (old) {
@@ -244,25 +271,30 @@ export function applyWeatherVisuals(
 
   const hemi = scene.getObjectByName('hemi') as THREE.HemisphereLight | undefined;
   if (hemi) {
-    hemi.color.set(night ? 0x334466 : weather.type === 'wet' ? 0x8899aa : 0xd0e4ff);
-    hemi.groundColor.set(night ? 0x0a1018 : weather.type === 'wet' ? 0x2a3030 : 0x3a4a28);
-    hemi.intensity = night ? 0.22 : weather.type === 'wet' ? 0.45 : 0.78;
+    hemi.color.set(night ? 0x334466 : weather.type === 'wet' ? 0x8899aa : 0xd8e8ff);
+    hemi.groundColor.set(night ? 0x0a1018 : weather.type === 'wet' ? 0x2a3030 : 0x4a5a32);
+    hemi.intensity = night ? 0.28 : weather.type === 'wet' ? 0.5 : 0.92;
   }
   const sun = scene.getObjectByName('sun') as THREE.DirectionalLight | undefined;
   if (sun) {
-    sun.color.set(night ? 0xaabbff : 0xfff2d8);
-    sun.intensity = night ? 0.25 : weather.type === 'wet' ? 0.55 : 1.55;
+    sun.color.set(night ? 0xaabbff : 0xfff0d0);
+    sun.intensity = night ? 0.28 : weather.type === 'wet' ? 0.6 : p.sunIntensity;
     applySunShadowQuality(sun, t);
   }
   const fill = scene.getObjectByName('fill') as THREE.DirectionalLight | undefined;
   if (fill) {
-    fill.color.set(night ? 0x4466aa : 0x88aaff);
-    fill.intensity = night ? 0.12 : weather.type === 'wet' ? 0.18 : 0.35;
+    fill.color.set(night ? 0x4466aa : 0x88b0ff);
+    fill.intensity = night ? 0.14 : weather.type === 'wet' ? 0.22 : 0.42;
+  }
+  const bounce = scene.getObjectByName('bounce') as THREE.DirectionalLight | undefined;
+  if (bounce) {
+    bounce.color.set(night ? 0x223344 : 0xffd8a8);
+    bounce.intensity = night ? 0.06 : weather.type === 'wet' ? 0.1 : 0.22;
   }
   const amb = scene.getObjectByName('amb') as THREE.AmbientLight | undefined;
   if (amb) {
-    amb.color.set(night ? 0x1a2030 : 0x404850);
-    amb.intensity = night ? 0.28 : 0.16;
+    amb.color.set(night ? 0x1a2030 : 0x485058);
+    amb.intensity = night ? 0.3 : 0.14;
   }
   (scene.userData as { night?: boolean }).night = night;
 }
@@ -272,14 +304,17 @@ export function applyGraphicsTier(
   scene: THREE.Scene,
   tier: GraphicsTier,
 ): void {
-  applyRendererQuality(renderer, tier);
+  const p = applyRendererQuality(renderer, tier);
   const sun = scene.getObjectByName('sun') as THREE.DirectionalLight | undefined;
-  if (sun) applySunShadowQuality(sun, tier);
+  if (sun) {
+    applySunShadowQuality(sun, tier);
+    const night = !!(scene.userData as { night?: boolean }).night;
+    if (!night) sun.intensity = p.sunIntensity;
+  }
   (scene.userData as { tier?: GraphicsTier }).tier = tier;
   const night = !!(scene.userData as { night?: boolean }).night;
   if (scene.fog && (scene.fog as THREE.Fog).isFog) {
-    const pf = profileFor(tier);
-    (scene.fog as THREE.Fog).near = night ? 45 : pf.fogNear;
-    (scene.fog as THREE.Fog).far = night ? 220 : pf.fogFar;
+    (scene.fog as THREE.Fog).near = night ? 45 : p.fogNear;
+    (scene.fog as THREE.Fog).far = night ? 220 : p.fogFar;
   }
 }

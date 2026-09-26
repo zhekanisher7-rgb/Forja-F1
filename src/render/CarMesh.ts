@@ -386,56 +386,67 @@ export function createCarMesh(livery: Livery, opts?: CarMeshOptions): THREE.Grou
   g.name = 'playerCar';
   g.userData.liveryId = livery.id;
 
-  // Per-car materials (liveries must stay independent)
-  const prim = new THREE.MeshStandardMaterial({
+  // Per-car materials — MeshPhysical paint/glass for real F1 clearcoat look
+  const prim = new THREE.MeshPhysicalMaterial({
     color: livery.primary,
-    metalness: 0.82,
-    roughness: 0.12,
-    envMapIntensity: 1.45,
+    metalness: 0.55,
+    roughness: 0.18,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.08,
+    envMapIntensity: 1.55,
   });
-  const sec = new THREE.MeshStandardMaterial({
+  const sec = new THREE.MeshPhysicalMaterial({
     color: livery.secondary,
-    metalness: 0.65,
-    roughness: 0.2,
-    envMapIntensity: 1.1,
+    metalness: 0.45,
+    roughness: 0.24,
+    clearcoat: 0.85,
+    clearcoatRoughness: 0.12,
+    envMapIntensity: 1.25,
   });
-  const acc = new THREE.MeshStandardMaterial({
+  const acc = new THREE.MeshPhysicalMaterial({
     color: livery.accent,
-    metalness: 0.78,
-    roughness: 0.14,
-    envMapIntensity: 1.3,
+    metalness: 0.5,
+    roughness: 0.2,
+    clearcoat: 0.95,
+    clearcoatRoughness: 0.1,
+    envMapIntensity: 1.4,
   });
-  const carbon = new THREE.MeshStandardMaterial({
-    color: 0x121214,
-    metalness: 0.9,
-    roughness: 0.26,
-    envMapIntensity: 1.0,
+  const carbon = new THREE.MeshPhysicalMaterial({
+    color: 0x0a0a0c,
+    metalness: 0.85,
+    roughness: 0.38,
+    clearcoat: 0.35,
+    clearcoatRoughness: 0.35,
+    envMapIntensity: 0.85,
   });
   const rubber = new THREE.MeshStandardMaterial({
-    color: 0x0a0a0a,
+    color: 0x080808,
     metalness: 0.02,
-    roughness: 0.95,
-    envMapIntensity: 0.12,
+    roughness: 0.97,
+    envMapIntensity: 0.1,
   });
-  const glass = new THREE.MeshStandardMaterial({
-    color: 0x081018,
-    metalness: 0.9,
+  const glass = new THREE.MeshPhysicalMaterial({
+    color: 0x0c1a28,
+    metalness: 0.15,
     roughness: 0.05,
-    envMapIntensity: 1.7,
+    // No transmission — too expensive across full AI grid; reflective tint instead
     transparent: true,
-    opacity: 0.78,
+    opacity: 0.42,
+    envMapIntensity: 2.2,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.05,
   });
   const rimMat = new THREE.MeshStandardMaterial({
-    color: 0xd4d4d8,
-    metalness: 0.95,
-    roughness: 0.16,
-    envMapIntensity: 1.35,
+    color: 0xd8d8dc,
+    metalness: 0.96,
+    roughness: 0.14,
+    envMapIntensity: 1.4,
   });
   const discMat = new THREE.MeshStandardMaterial({
-    color: 0x3a3a42,
-    metalness: 0.75,
-    roughness: 0.38,
-    envMapIntensity: 0.75,
+    color: 0x2e2e34,
+    metalness: 0.8,
+    roughness: 0.35,
+    envMapIntensity: 0.8,
   });
   const caliperMat = new THREE.MeshStandardMaterial({
     color: livery.accent,
@@ -687,7 +698,7 @@ export function createCarMesh(livery: Livery, opts?: CarMeshOptions): THREE.Grou
   const shadowMat = new THREE.MeshBasicMaterial({
     color: 0x000000,
     transparent: true,
-    opacity: 0.42,
+    opacity: 0.48,
     depthWrite: false,
   });
   const blob = mesh(geos.blob, shadowMat, 'none');
@@ -709,9 +720,9 @@ export function createCarMesh(livery: Livery, opts?: CarMeshOptions): THREE.Grou
 export function applyLivery(car: THREE.Group, livery: Livery): void {
   const mats = car.userData.materials as
     | {
-        prim: THREE.MeshStandardMaterial;
-        sec: THREE.MeshStandardMaterial;
-        acc: THREE.MeshStandardMaterial;
+        prim: THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial;
+        sec: THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial;
+        acc: THREE.MeshStandardMaterial | THREE.MeshPhysicalMaterial;
         caliperMat: THREE.MeshStandardMaterial;
       }
     | undefined;

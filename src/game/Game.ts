@@ -18,6 +18,7 @@ import {
 } from '../render/SceneSetup';
 import { createTrackMesh } from '../render/TrackMesh';
 import { createCarMesh, setDrsVisual } from '../render/CarMesh';
+import { PostFX } from '../render/PostFX';
 import { CameraController } from '../render/CameraController';
 import {
   loadGraphicsSettings,
@@ -62,6 +63,7 @@ export class Game {
   private phase: Phase = 'menu';
   private settings: RaceSettings | null = null;
   private graphics: GraphicsSettings;
+  private postFX: PostFX;
   private totalLaps = 3;
   private raceTimeMs = 0;
   private countdownT = 0;
@@ -102,6 +104,8 @@ export class Game {
     this.renderer = createRenderer(this.canvas, this.graphics.tier);
     this.scene = createScene(createWeather('dry'), this.graphics.tier, this.graphics.night);
     this.cameraCtrl = new CameraController(window.innerWidth / window.innerHeight);
+    this.postFX = new PostFX(this.renderer, this.scene, this.cameraCtrl.camera);
+    this.postFX.applyTier(this.graphics.tier);
 
     this.menu = new MainMenu(app, {
       onStart: (s) => this.startRace(s),
@@ -136,12 +140,15 @@ export class Game {
     this.graphics = { ...g };
     saveGraphicsSettings(this.graphics);
     applyGraphicsTier(this.renderer, this.scene, this.graphics.tier);
+    this.postFX.applyTier(this.graphics.tier);
     applyWeatherVisuals(
       this.scene,
       createWeather(this.settings?.weather ?? 'dry'),
       this.graphics.night,
       this.graphics.tier,
     );
+    const p = profileFor(this.graphics.tier);
+    this.renderer.toneMappingExposure = this.graphics.night ? 0.9 : p.exposure;
     this.hud.setShowFps(this.graphics.showFps);
   }
 
@@ -223,9 +230,11 @@ export class Game {
     this.clearWorld();
 
     applyGraphicsTier(this.renderer, this.scene, this.graphics.tier);
+    this.postFX.applyTier(this.graphics.tier);
     const weather = createWeather(settings.weather);
     applyWeatherVisuals(this.scene, weather, this.graphics.night, this.graphics.tier);
-    this.renderer.toneMappingExposure = this.graphics.night ? 0.95 : 1.22;
+    const qp = profileFor(this.graphics.tier);
+    this.renderer.toneMappingExposure = this.graphics.night ? 0.9 : qp.exposure;
 
     this.track = createMonacoTrack();
     this.trackRoot = createTrackMesh(this.track, this.graphics.tier, this.graphics.night);
@@ -238,8 +247,8 @@ export class Game {
     }
 
     const livery = this.resolveLivery(settings);
-    const castShadow = profileFor(this.graphics.tier).sceneryCastShadow;
-    this.carMesh = createCarMesh(livery, { castShadow: castShadow, racingNumber: 1 });
+    const castShadow = qp.carCastShadow || qp.sceneryCastShadow;
+    this.carMesh = createCarMesh(livery, { castShadow, racingNumber: 1 });
     this.scene.add(this.carMesh);
 
     const start = sampleTrack(this.track.points, 5);
@@ -264,7 +273,7 @@ export class Game {
         settings.liveryId,
         weather,
         castShadow,
-      );
+      ); // castShadow = carCastShadow || sceneryCastShadow
       this.aiLapArmed = this.aiCars.map(() => false);
       for (const ai of this.aiCars) {
         this.scene.add(ai.mesh);
@@ -342,6 +351,7 @@ export class Game {
     this.renderer.setSize(w, h);
     this.cameraCtrl.resize(w / h);
     applyGraphicsTier(this.renderer, this.scene, this.graphics.tier);
+    this.postFX.setSize(w, h);
   }
 
   private loop = (): void => {
@@ -375,8 +385,21 @@ export class Game {
       this.cameraCtrl.update(this.vehicle, dt);
     }
 
-    this.renderer.render(this.scene, this.cameraCtrl.camera);
+    this.updateWater(dt);
+    this.postFX.render();
   };
+
+  /** Subtle harbor normal scroll on Ultra (and High if flagged). */
+  private updateWater(dt: number): void {
+    if (!this.trackRoot) return;
+    const water = this.trackRoot.getObjectByName('harborWater') as THREE.Mesh | undefined;
+    if (!water?.userData?.animatedWater) return;
+    const mat = water.material as THREE.MeshStandardMaterial;
+    const nrm = mat.normalMap;
+    if (!nrm) return;
+    nrm.offset.x = (nrm.offset.x + dt * 0.02) % 1;
+    nrm.offset.y = (nrm.offset.y + dt * 0.012) % 1;
+  }
 
   private syncAIMeshes(): void {
     for (const ai of this.aiCars) {

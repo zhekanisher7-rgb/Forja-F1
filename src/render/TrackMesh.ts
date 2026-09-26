@@ -9,7 +9,7 @@ function makeAsphaltTexture(anisotropy: number): THREE.CanvasTexture {
   c.width = 512;
   c.height = 512;
   const ctx = c.getContext('2d')!;
-  ctx.fillStyle = '#2c2c32';
+  ctx.fillStyle = '#1e1e24';
   ctx.fillRect(0, 0, 512, 512);
 
   // Fine grain
@@ -65,6 +65,33 @@ function makeAsphaltTexture(anisotropy: number): THREE.CanvasTexture {
   tex.anisotropy = anisotropy;
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.generateMipmaps = true;
+  return tex;
+}
+
+
+/** Cheap asphalt roughness variation (darker = glossier racing line) */
+function makeAsphaltRoughnessMap(anisotropy: number): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 256;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#c8c8c8';
+  ctx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 4000; i++) {
+    const v = 140 + Math.random() * 80;
+    ctx.fillStyle = `rgb(${v},${v},${v})`;
+    ctx.fillRect(Math.random() * 256, Math.random() * 256, 1 + Math.random() * 2, 1 + Math.random() * 2);
+  }
+  // Polished racing-line bands (lower roughness)
+  for (let band = 0; band < 5; band++) {
+    const x0 = 28 + band * 40 + Math.random() * 8;
+    ctx.fillStyle = 'rgb(90,90,95)';
+    ctx.fillRect(x0, 0, 8 + Math.random() * 6, 256);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(1.4, 36);
+  tex.anisotropy = anisotropy;
   return tex;
 }
 
@@ -212,13 +239,80 @@ function makeBuildingFacadeTexture(): THREE.CanvasTexture {
   return tex;
 }
 
+
+function makeRockTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 256;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#6a6660';
+  ctx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 6000; i++) {
+    const v = 70 + Math.random() * 70;
+    const a = 0.08 + Math.random() * 0.2;
+    ctx.fillStyle = `rgba(${v},${v - 4},${v - 10},${a})`;
+    ctx.fillRect(Math.random() * 256, Math.random() * 256, 1 + Math.random() * 3, 1 + Math.random() * 3);
+  }
+  for (let i = 0; i < 40; i++) {
+    const cx = Math.random() * 256;
+    const cy = Math.random() * 256;
+    const r = 6 + Math.random() * 20;
+    const grd = ctx.createRadialGradient(cx, cy, 1, cx, cy, r);
+    grd.addColorStop(0, 'rgba(40,38,34,0.35)');
+    grd.addColorStop(1, 'rgba(40,38,34,0)');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Crack lines
+  ctx.strokeStyle = 'rgba(30,28,24,0.35)';
+  ctx.lineWidth = 1.2;
+  for (let i = 0; i < 18; i++) {
+    ctx.beginPath();
+    ctx.moveTo(Math.random() * 256, Math.random() * 256);
+    ctx.lineTo(Math.random() * 256, Math.random() * 256);
+    ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function makeWaterNormalTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 256;
+  const ctx = c.getContext('2d')!;
+  // Flat normal base (128,128,255)
+  ctx.fillStyle = '#8080ff';
+  ctx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 300; i++) {
+    const x = Math.random() * 256;
+    const y = Math.random() * 256;
+    const w = 20 + Math.random() * 60;
+    const h = 3 + Math.random() * 6;
+    const nx = 110 + Math.random() * 36;
+    const ny = 110 + Math.random() * 36;
+    ctx.fillStyle = `rgb(${nx|0},${ny|0},255)`;
+    ctx.beginPath();
+    ctx.ellipse(x, y, w, h, Math.random() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(14, 9);
+  return tex;
+}
+
 function makeGroundTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 256;
   c.height = 256;
   const ctx = c.getContext('2d')!;
-  // Base meadow
-  ctx.fillStyle = '#3a5236';
+  // Base meadow — slightly varied Mediterranean scrub
+  ctx.fillStyle = '#354c32';
   ctx.fillRect(0, 0, 256, 256);
   for (let i = 0; i < 5000; i++) {
     const g = 40 + Math.random() * 50;
@@ -268,13 +362,27 @@ export function createTrackMesh(
   addShoulderStrips(root, left, right, pts, quality);
 
   // Continuous asphalt ribbon (dense Catmull-Rom samples) — clear Y above terrain, no polygonOffset
-  const asphaltMat = new THREE.MeshStandardMaterial({
-    color: 0x3a3a42,
-    map: makeAsphaltTexture(quality.anisotropy),
-    roughness: 0.78,
-    metalness: 0.08,
-    envMapIntensity: 0.55,
-  });
+  const asphaltMap = makeAsphaltTexture(quality.anisotropy);
+  const asphaltRough = makeAsphaltRoughnessMap(quality.anisotropy);
+  const asphaltMat = quality.asphaltClearcoat
+    ? new THREE.MeshPhysicalMaterial({
+        color: 0x2a2a30,
+        map: asphaltMap,
+        roughness: 0.72,
+        roughnessMap: asphaltRough,
+        metalness: 0.06,
+        envMapIntensity: 0.75,
+        clearcoat: 0.22,
+        clearcoatRoughness: 0.45,
+      })
+    : new THREE.MeshStandardMaterial({
+        color: 0x2c2c32,
+        map: asphaltMap,
+        roughness: 0.82,
+        roughnessMap: asphaltRough,
+        metalness: 0.05,
+        envMapIntensity: 0.5,
+      });
   // Asphalt clearly above terrain/shoulders (0.055) — prevents Noghes/S-F z-fight
   const asphalt = new THREE.Mesh(buildRibbonGeometry(left, right, 0.055), asphaltMat);
   asphalt.receiveShadow = true;
@@ -421,9 +529,9 @@ function addTrackMarkings(root: THREE.Group, pts: TrackPoint[], quality: Quality
     geo.setIndex(indices);
     geo.computeVertexNormals();
     const dashMat = new THREE.MeshBasicMaterial({
-      color: 0xd8d8e0,
+      color: 0xf0f0f6,
       transparent: true,
-      opacity: 0.55,
+      opacity: 0.72,
       depthWrite: false,
       side: THREE.DoubleSide,
     });
@@ -800,16 +908,34 @@ function boxClearsRibbon(
 }
 
 function addHarbor(root: THREE.Group, pts: TrackPoint[], quality: QualityProfile): void {
-  // Cheap water — Basic + slight transparency (no expensive specular shader)
-  const waterMat = new THREE.MeshBasicMaterial({
-    color: 0x1a7a9a,
-    transparent: true,
-    opacity: 0.9,
-  });
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(280, 180), waterMat);
+  // Harbor water — Basic on Low/Medium; reflective + optional animated normals on High/Ultra
+  let waterMat: THREE.Material;
+  if (quality.reflectiveWater) {
+    const nrm = makeWaterNormalTexture();
+    waterMat = new THREE.MeshStandardMaterial({
+      color: 0x0e5a78,
+      metalness: 0.72,
+      roughness: 0.18,
+      envMapIntensity: 1.35,
+      normalMap: nrm,
+      normalScale: new THREE.Vector2(0.55, 0.55),
+      transparent: true,
+      opacity: 0.92,
+    });
+    (waterMat as THREE.MeshStandardMaterial).userData.waterNormal = nrm;
+  } else {
+    waterMat = new THREE.MeshBasicMaterial({
+      color: 0x0f6a88,
+      transparent: true,
+      opacity: 0.88,
+    });
+  }
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(280, 180, 1, 1), waterMat);
   water.rotation.x = -Math.PI / 2;
   water.position.set(230, -0.06, -50);
   water.frustumCulled = true;
+  water.name = 'harborWater';
+  water.userData.animatedWater = quality.animatedWater;
   root.add(water);
 
   const quayMat = quality.useLambertScenery
@@ -1049,8 +1175,9 @@ function addTecproBarriers(
     ? new THREE.MeshLambertMaterial({ map: tecproTex, side: THREE.DoubleSide })
     : new THREE.MeshStandardMaterial({
         map: tecproTex,
-        metalness: 0.05,
-        roughness: 0.85,
+        metalness: 0.02,
+        roughness: 0.72,
+        envMapIntensity: 0.35,
         side: THREE.DoubleSide,
       });
   const wall = new THREE.Mesh(geo, wallMat);
@@ -1129,11 +1256,20 @@ function addSponsorBoards(
   for (let si = 0; si < SPONSOR_NAMES.length; si++) {
     const list = boards.filter((b) => b.si === si);
     if (!list.length) continue;
-    const mat = new THREE.MeshBasicMaterial({
-      map: atlas.clone(),
-      side: THREE.DoubleSide,
-      toneMapped: false,
-    });
+    const mat = quality.useLambertScenery
+      ? new THREE.MeshBasicMaterial({
+          map: atlas.clone(),
+          side: THREE.DoubleSide,
+          toneMapped: false,
+        })
+      : new THREE.MeshStandardMaterial({
+          map: atlas.clone(),
+          side: THREE.DoubleSide,
+          roughness: 0.55,
+          metalness: 0.15,
+          envMapIntensity: 0.4,
+          toneMapped: true,
+        });
     const map = mat.map!;
     map.offset.set(0, 1 - (si + 1) * cellH);
     map.repeat.set(1, cellH);
@@ -1251,17 +1387,31 @@ function addTunnelEntranceRocks(
   const group = new THREE.Group();
   group.name = 'tunnel-entrance-rocks';
 
+  const rockTex = makeRockTexture();
+  rockTex.repeat.set(2.2, 2.2);
   const rockMat = quality.useLambertScenery
-    ? new THREE.MeshLambertMaterial({ color: 0x6e6a62 })
-    : new THREE.MeshStandardMaterial({ color: 0x6e6a62, roughness: 0.92, metalness: 0.05 });
+    ? new THREE.MeshLambertMaterial({ color: 0x7a766e, map: rockTex })
+    : new THREE.MeshStandardMaterial({
+        color: 0x7a766e,
+        map: rockTex,
+        roughness: 0.9,
+        metalness: 0.04,
+        envMapIntensity: 0.25,
+      });
   const darkMat = quality.useLambertScenery
-    ? new THREE.MeshLambertMaterial({ color: 0x4a4842 })
-    : new THREE.MeshStandardMaterial({ color: 0x4a4842, roughness: 0.95, metalness: 0.04 });
+    ? new THREE.MeshLambertMaterial({ color: 0x4a4842, map: rockTex })
+    : new THREE.MeshStandardMaterial({
+        color: 0x4a4842,
+        map: rockTex,
+        roughness: 0.94,
+        metalness: 0.03,
+        envMapIntensity: 0.2,
+      });
   const scrubMat = quality.useLambertScenery
     ? new THREE.MeshLambertMaterial({ color: 0x3a6a34 })
     : new THREE.MeshStandardMaterial({ color: 0x3a6a34, roughness: 0.9 });
 
-  // Tier: ultra/low fewer chunks; medium+ full landmark
+  // Tier: low fewer chunks; medium+ full landmark
   const chunks =
     quality.maxDecor >= 30 ? 9 : quality.maxDecor >= 20 ? 7 : quality.maxDecor >= 12 ? 5 : 3;
 
@@ -1823,7 +1973,7 @@ function addScenery(
   addInstanced(poleGeo, lampMat, poles, false);
   addInstanced(glowGeo, lampGlowMat, glows, false);
 
-  const rockMat = makeSceneryMat(0x6a6860, quality);
+  const rockMat = makeSceneryMat(0x6e6a62, quality, makeRockTexture());
   const shrubMat = makeSceneryMat(0x2e6a32, quality);
   const flowerMat = makeSceneryMat(0xffffff, quality);
   const cliffMat = makeSceneryMat(0x5c584f, quality);
