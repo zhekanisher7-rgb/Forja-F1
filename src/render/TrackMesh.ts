@@ -830,29 +830,35 @@ function addHarbor(root: THREE.Group, pts: TrackPoint[], quality: QualityProfile
     root.add(mesh);
   }
 
+  // Warm hull / dark cabin — never place white+blue boxes on asphalt (post-tunnel).
   const hullMat = quality.useLambertScenery
-    ? new THREE.MeshLambertMaterial({ color: 0xf0f2f5 })
-    : new THREE.MeshStandardMaterial({ color: 0xf0f2f5, roughness: 0.4, metalness: 0.3 });
+    ? new THREE.MeshLambertMaterial({ color: 0xc8b8a0 })
+    : new THREE.MeshStandardMaterial({ color: 0xc8b8a0, roughness: 0.45, metalness: 0.25 });
   const cabinMat = quality.useLambertScenery
-    ? new THREE.MeshLambertMaterial({ color: 0x2a4060 })
-    : new THREE.MeshStandardMaterial({ color: 0x2a4060, roughness: 0.35, metalness: 0.4 });
+    ? new THREE.MeshLambertMaterial({ color: 0x3a3834 })
+    : new THREE.MeshStandardMaterial({ color: 0x3a3834, roughness: 0.4, metalness: 0.35 });
+  // Deep in the harbor basin (south of Nouvelle Chicane) — must clear ribbon by hull half-diag.
   const boats: [number, number, number][] = [
-    [200, -120, 0.4],
-    [255, -110, -0.6],
+    [190, -155, 0.4],
+    [240, -165, -0.5],
   ];
   if (quality.maxDecor >= 14) {
-    boats.push([175, -135, 1.1], [280, -95, -0.2]);
+    boats.push([160, -170, 1.0], [285, -150, -0.25]);
   }
   if (quality.maxDecor >= 30) {
-    boats.push([230, -145, 0.7]);
+    boats.push([215, -180, 0.65]);
   }
+  const hullHalf = Math.hypot(14 / 2, 4 / 2);
   for (const [bx, bz, rot] of boats) {
+    // Reject anything that would sit on / through driveable asphalt
+    if (!boxClearsRibbon(pts, bx, bz, 14, 4, 4.0)) continue;
+    if (intersectsRoadRibbon(pts, bx, bz, hullHalf, 3.0)) continue;
     const hull = new THREE.Mesh(new THREE.BoxGeometry(14, 2.2, 4), hullMat);
-    hull.position.set(bx, 0.6, bz);
+    hull.position.set(bx, 0.55, bz);
     hull.rotation.y = rot;
     hull.castShadow = quality.sceneryCastShadow;
     const cabin = new THREE.Mesh(new THREE.BoxGeometry(6, 2.5, 3.2), cabinMat);
-    cabin.position.set(bx - Math.sin(rot) * 2, 2.4, bz - Math.cos(rot) * 2);
+    cabin.position.set(bx - Math.sin(rot) * 2, 2.3, bz - Math.cos(rot) * 2);
     cabin.rotation.y = rot;
     cabin.castShadow = quality.sceneryCastShadow;
     root.add(hull, cabin);

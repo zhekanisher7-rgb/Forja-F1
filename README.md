@@ -67,6 +67,10 @@ npm run preview   # опционально
 
 ### Нет сине-белых кубов на асфальте
 Убраны клумбы-боксы и синие спонсорские панели; Tecpro — только красно-белые soft-wall’ы (+ верхняя кромка). Декор дальше от ленты с доп. clearance.
+Яхты в гавани после туннеля сдвинуты в воду с проверкой ribbon clearance (больше никаких бело-синих боксов на асфальте Nouvelle Chicane).
+
+### Одинаковая физика игрока: Quick Race = Time Trial
+`PLAYER_VEHICLE_SPEC` + `INPUT_SMOOTHING` / `PLAYER_STEER_YAW_SMOOTH` — одна масса, мощность, ramp газа/руля в обоих режимах. Столкновения с AI не режут `damageMul`/maxPower игрока.
 
 ### Машины F1 2026 (procedural, детальный силуэт)
 Общий builder для игрока и AI (`CarMesh.ts`), shared BufferGeometry между инстансами:

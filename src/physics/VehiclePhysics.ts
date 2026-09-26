@@ -59,6 +59,21 @@ export interface PhysicsConfig {
   wheelbase: number;
 }
 
+/** Shared player chassis — identical in Quick Race and Time Trial (AI must not alter these). */
+export const PLAYER_VEHICLE_SPEC = {
+  mass: 620,
+  maxPower: 980, // kW peak
+  dragCd: 0.88,
+  downforceCl: 3.0,
+  wheelbase: 3.6,
+} as const;
+
+/** Arcade yaw blend toward limited steer rate (same in every mode). */
+export const PLAYER_STEER_YAW_SMOOTH = {
+  keep: 0.58,
+  apply: 0.42,
+} as const;
+
 const GEAR_RATIOS = [0, 3.2, 2.4, 1.9, 1.55, 1.3, 1.12, 0.98, 0.88];
 const FINAL_DRIVE = 3.4;
 const MAX_RPM = 15000;
@@ -227,8 +242,9 @@ export class VehiclePhysics {
     if (state.wheelLock) {
       state.angularVel = state.angularVel * 0.95 + limitedYaw * 0.25;
     } else {
-      // Snappier than before, still smoothed (avoids twitch on wide ribbon)
-      state.angularVel = state.angularVel * 0.58 + limitedYaw * 0.42;
+      // Shared PLAYER_STEER_YAW_SMOOTH — identical Quick Race / Time Trial feel
+      const { keep, apply } = PLAYER_STEER_YAW_SMOOTH;
+      state.angularVel = state.angularVel * keep + limitedYaw * apply;
     }
     state.yaw += state.angularVel * dt;
 

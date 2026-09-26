@@ -242,18 +242,21 @@ export function createAIGrid(
     { skill: 0.42, aggression: 0.25, liveryId: pool[3] ?? 'williams' },
   ];
 
-  // Grid: player at s=5; AI behind on alternate sides
-  return configs.map((cfg, i) =>
-    createAICar(
+  // Grid: player at s=5; AI truly behind (lower s, wrapped) on alternate sides
+  const len = track.length;
+  return configs.map((cfg, i) => {
+    const behind = 5 - (i + 1) * 10;
+    const startS = ((behind % len) + len) % len;
+    return createAICar(
       `ai${i}`,
       cfg,
       track,
-      5 + (i + 1) * 8.5,
+      startS,
       i % 2 === 0 ? -0.85 : 0.85,
       weather,
       castShadow,
-    ),
-  );
+    );
+  });
 }
 
 /** Legacy stub kept for type compatibility */

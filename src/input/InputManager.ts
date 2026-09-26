@@ -9,6 +9,14 @@ export interface InputState {
   cameraToggle: boolean;
 }
 
+/** Shared analog ramps — identical in Quick Race and Time Trial. */
+export const INPUT_SMOOTHING = {
+  throttleRamp: 3.2,
+  steerRamp: 4.0,
+  brakeRamp: 5.5,
+  engineBrakeRamp: 4.0,
+} as const;
+
 const KEYS: Record<string, boolean> = {};
 
 export class InputManager {
@@ -35,9 +43,8 @@ export class InputManager {
   }
 
   update(dt: number): InputState {
-    // Arcade ramps: quick but not instant (avoids twitch on wide track)
-    const throttleRamp = 3.2;
-    const steerRamp = 4.0;
+    // Shared INPUT_SMOOTHING — same throttle/steer feel with or without AI on track
+    const { throttleRamp, steerRamp, brakeRamp, engineBrakeRamp } = INPUT_SMOOTHING;
 
     const wantGas = KEYS['KeyW'] || KEYS['ArrowUp'];
     const wantBrake = KEYS['ShiftLeft'] || KEYS['ShiftRight'];
@@ -46,8 +53,8 @@ export class InputManager {
     const wantRight = KEYS['KeyD'] || KEYS['ArrowRight'];
 
     this.throttle = lerpToward(this.throttle, wantGas ? 1 : 0, 1 - Math.exp(-throttleRamp * dt));
-    this.brake = lerpToward(this.brake, wantBrake ? 1 : 0, 1 - Math.exp(-5.5 * dt));
-    this.engineBrake = lerpToward(this.engineBrake, wantEngineBrake ? 1 : 0, 1 - Math.exp(-4.0 * dt));
+    this.brake = lerpToward(this.brake, wantBrake ? 1 : 0, 1 - Math.exp(-brakeRamp * dt));
+    this.engineBrake = lerpToward(this.engineBrake, wantEngineBrake ? 1 : 0, 1 - Math.exp(-engineBrakeRamp * dt));
 
     // A = LEFT (−1), D = RIGHT (+1).
     let steerTarget = 0;

@@ -3,6 +3,7 @@ import { InputManager } from '../input/InputManager';
 import {
   VehiclePhysics,
   createVehicleState,
+  PLAYER_VEHICLE_SPEC,
   type VehicleState,
 } from '../physics/VehiclePhysics';
 import { createWeather } from '../physics/Weather';
@@ -241,14 +242,11 @@ export class Game {
     this.vehicle.lap = 1;
     this.vehicle.currentLapMs = 0;
 
+    // Same PLAYER_VEHICLE_SPEC in Quick Race and Time Trial — AI presence never scales these.
     this.physics = new VehiclePhysics({
       difficulty: settings.difficulty,
       weather,
-      mass: 620,
-      maxPower: 980,
-      dragCd: 0.88,
-      downforceCl: 3.0,
-      wheelbase: 3.6,
+      ...PLAYER_VEHICLE_SPEC,
     });
 
     // AI opponents (skip in time-trial solo focus? keep them for quick/tutorial)
