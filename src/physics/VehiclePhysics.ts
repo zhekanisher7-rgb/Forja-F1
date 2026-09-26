@@ -64,16 +64,22 @@ export interface PhysicsConfig {
 /** Shared player chassis — identical in Quick Race and Time Trial (AI must not alter these). */
 export const PLAYER_VEHICLE_SPEC = {
   mass: 620,
-  maxPower: 980, // kW peak
+  maxPower: 980, // kW peak ICE+MGUK
+  ersBoostKw: 200, // Ctrl ERS deploy
   dragCd: 0.88,
   downforceCl: 3.0,
   wheelbase: 3.6,
+  /** Dry + DRS fan estimate (km/h) matching arcade power curve */
+  topSpeedKmh: 355,
 } as const;
 
 /** Arcade yaw blend toward limited steer rate (same in every mode). */
 export const PLAYER_STEER_YAW_SMOOTH = {
-  keep: 0.42, // was 0.58 — less understeer lag
-  apply: 0.58, // was 0.42 — snappier yaw response (QR/TT shared)
+  keep: 0.22, // less lag — held steer stays authoritative
+  apply: 0.78, // snappier yaw response (QR/TT shared)
+  /** Extra snap while |steer| near full lock so long L/R holds do not understeer away */
+  fullKeep: 0.12,
+  fullApply: 0.88,
 } as const;
 
 const GEAR_RATIOS = [0, 3.2, 2.4, 1.9, 1.55, 1.3, 1.12, 0.98, 0.88];
@@ -152,7 +158,7 @@ export class VehiclePhysics {
     // Exactly 200 kW; drain ~0.125/s → ~8 s full-bar (still usable in QR/TT)
     let ersBoost = 0;
     if (state.fuel > 0 && input.ers && state.ers > 0.01 && state.speed > 5) {
-      ersBoost = 200; // kW extra — exact request
+      ersBoost = PLAYER_VEHICLE_SPEC.ersBoostKw;
       state.ers = Math.max(0, state.ers - 0.125 * dt);
     } else if (state.speed > 20 && input.brake > 0.3) {
       // regen
@@ -234,20 +240,25 @@ export class VehiclePhysics {
     if (Math.abs(state.speed) < 0.05 && mainBrake > 0.1) state.speed = 0;
     if (state.gear !== -1 && state.speed < -0.5) state.speed = 0;
 
-    // Steering — arcade snappy turn-in (A left / D right). Less understeer feel.
-    // Wider track: enough mid-speed bite without high-speed snap. QR/TT identical.
-    const maxSteer = 0.70 / (1 + Math.abs(state.speed) / 48);
+    // Steering — arcade snappy turn-in (A left / D right). Sustained full L/R
+    // keeps yaw authority (no understeer fade from grip starve / smoothing).
+    const maxSteer = 0.92 / (1 + Math.abs(state.speed) / 68);
     const steerAngle = input.steer * maxSteer;
-    const latGripBudget = grip * (1 + downforce / (this.cfg.mass * 9.81)) * 0.95;
+    const latGripBudget = grip * (1 + downforce / (this.cfg.mass * 9.81)) * 1.18;
     const yawRate = (state.speed / Math.max(0.1, this.cfg.wheelbase)) * Math.tan(steerAngle);
-    // Limit by grip
     const maxYaw = latGripBudget * 9.81 / Math.max(1, Math.abs(state.speed));
-    const limitedYaw = Math.max(-maxYaw, Math.min(maxYaw, yawRate));
+    let limitedYaw = Math.max(-maxYaw, Math.min(maxYaw, yawRate));
+    const fullLock = Math.abs(input.steer) > 0.92;
+    // Held full lock: soft-cap only — do not starve commanded yawRate
+    if (fullLock && Math.abs(yawRate) > Math.abs(limitedYaw)) {
+      limitedYaw = limitedYaw * 0.25 + yawRate * 0.75;
+    }
     if (state.wheelLock) {
       state.angularVel = state.angularVel * 0.95 + limitedYaw * 0.25;
     } else {
-      // Shared PLAYER_STEER_YAW_SMOOTH — identical Quick Race / Time Trial feel
-      const { keep, apply } = PLAYER_STEER_YAW_SMOOTH;
+      const sm = PLAYER_STEER_YAW_SMOOTH;
+      const keep = fullLock ? sm.fullKeep : sm.keep;
+      const apply = fullLock ? sm.fullApply : sm.apply;
       state.angularVel = state.angularVel * keep + limitedYaw * apply;
     }
     state.yaw += state.angularVel * dt;

@@ -169,6 +169,32 @@ canvas#game-canvas {
 .livery-btn:hover { transform: scale(1.04); }
 .livery-btn.selected { border-color: #fff; box-shadow: 0 0 8px rgba(255,255,255,0.4); }
 
+.tech-specs {
+  background: #0e1018;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  padding: 0.55rem 0.7rem;
+  margin-top: 0.35rem;
+  display: grid;
+  gap: 0.28rem;
+}
+.tech-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+.tech-k { color: var(--f1-muted); }
+.tech-v {
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  color: var(--f1-accent);
+  text-align: right;
+}
+
+
 .color-pickers {
   display: flex;
   gap: 0.75rem;

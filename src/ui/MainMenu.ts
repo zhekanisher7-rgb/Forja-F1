@@ -1,5 +1,5 @@
 import { LIVERIES } from '../vehicles/Liveries';
-import type { Difficulty } from '../physics/VehiclePhysics';
+import { PLAYER_VEHICLE_SPEC, type Difficulty } from '../physics/VehiclePhysics';
 import type { WeatherType } from '../physics/Weather';
 import type { TireCompound } from '../physics/TireModel';
 import {
@@ -46,6 +46,13 @@ const TIER_LABELS: Record<GraphicsTier, string> = {
 };
 
 const TIER_ORDER: GraphicsTier[] = ['low', 'medium', 'high', 'ultra'];
+
+const TIRE_LABELS: Record<TireCompound, string> = {
+  slick: 'Слики',
+  inter: 'Интермедиаты',
+  wet: 'Дождевые',
+};
+
 
 export class MainMenu {
   el: HTMLDivElement;
@@ -123,6 +130,10 @@ export class MainMenu {
               <input type="color" id="c-acc" value="${this.settings.customAccent}" />
             </div>
           </div>
+          <div class="form-row" id="car-specs">
+            <label>Технические характеристики</label>
+            <div class="tech-specs" id="tech-specs"></div>
+          </div>
           <div class="form-row">
             <label>Трасса</label>
             <select id="track">
@@ -164,6 +175,7 @@ export class MainMenu {
         grid.appendChild(b);
       }
       this.toggleCustom();
+      this.renderTechSpecs();
     } else if (this.view === 'settings') {
       this.el.innerHTML = `
         <div class="logo" style="font-size:1.8rem">Настройки</div>
@@ -247,7 +259,7 @@ export class MainMenu {
     const weather = this.el.querySelector('#weather') as HTMLSelectElement | null;
     if (weather) weather.addEventListener('change', () => (this.settings.weather = weather.value as WeatherType));
     const tires = this.el.querySelector('#tires') as HTMLSelectElement | null;
-    if (tires) tires.addEventListener('change', () => (this.settings.tires = tires.value as TireCompound));
+    if (tires) tires.addEventListener('change', () => { this.settings.tires = tires.value as TireCompound; this.renderTechSpecs(); });
     const laps = this.el.querySelector('#laps') as HTMLSelectElement | null;
     if (laps) laps.addEventListener('change', () => (this.settings.laps = Number(laps.value)));
     const cp = this.el.querySelector('#c-prim') as HTMLInputElement | null;
@@ -272,6 +284,30 @@ export class MainMenu {
       fps.addEventListener('change', () => {
         this.graphics.showFps = fps.value === '1';
       });
+  }
+
+
+  private renderTechSpecs(): void {
+    const box = this.el.querySelector('#tech-specs') as HTMLElement | null;
+    if (!box) return;
+    const s = PLAYER_VEHICLE_SPEC;
+    const tire = TIRE_LABELS[this.settings.tires];
+    const rows: [string, string][] = [
+      ['Масса', `${s.mass} кг`],
+      ['Мощность', `${s.maxPower} кВт`],
+      ['ERS-буст', `${s.ersBoostKw} кВт`],
+      ['Макс. скорость', `~${s.topSpeedKmh} км/ч`],
+      ['Прижимная сила Cl', s.downforceCl.toFixed(1)],
+      ['Сопротивление Cd', s.dragCd.toFixed(2)],
+      ['Колёсная база', `${s.wheelbase.toFixed(1)} м`],
+      ['Шины', tire],
+    ];
+    box.innerHTML = rows
+      .map(
+        ([k, v]) =>
+          `<div class="tech-row"><span class="tech-k">${k}</span><span class="tech-v">${v}</span></div>`,
+      )
+      .join('');
   }
 
   private toggleCustom(): void {

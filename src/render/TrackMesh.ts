@@ -393,8 +393,8 @@ export function createTrackMesh(
         metalness: 0.05,
         envMapIntensity: 0.5,
       });
-  // Asphalt clearly above terrain/shoulders (0.055) — prevents Noghes/S-F z-fight
-  const asphalt = new THREE.Mesh(buildRibbonGeometry(left, right, 0.055), asphaltMat);
+  // Asphalt clearly above terrain/shoulders — prevents grass / shoulder z-fight
+  const asphalt = new THREE.Mesh(buildRibbonGeometry(left, right, 0.07), asphaltMat);
   asphalt.receiveShadow = true;
   asphalt.castShadow = quality.asphaltCastShadow;
   root.add(asphalt);
@@ -410,7 +410,7 @@ export function createTrackMesh(
     opacity: 0.4,
     depthWrite: false,
   });
-  root.add(new THREE.Mesh(buildRibbonGeometry(ll, rr, 0.062), lineMat));
+  root.add(new THREE.Mesh(buildRibbonGeometry(ll, rr, 0.078), lineMat));
 
   addEdgeLine(root, left, true, pts);
   addEdgeLine(root, right, false, pts);
@@ -484,7 +484,7 @@ export function createTrackMesh(
   const sf = new THREE.Mesh(new THREE.PlaneGeometry(pts[0].width * 0.92, 1.6), sfMat);
   sf.rotation.x = -Math.PI / 2;
   const yaw0 = Math.atan2(pts[1].x - pts[0].x, pts[1].z - pts[0].z);
-  sf.position.set(pts[0].x, pts[0].y + 0.072, pts[0].z);
+  sf.position.set(pts[0].x, pts[0].y + 0.09, pts[0].z);
   sf.rotation.z = -yaw0;
   sf.renderOrder = 2;
   root.add(sf);
@@ -532,7 +532,7 @@ function addTrackMarkings(root: THREE.Group, pts: TrackPoint[], quality: Quality
     const yaw = Math.atan2(b.x - a.x, b.z - a.z);
     const t = (s - a.s) / Math.max(1e-3, b.s - a.s);
     const x = a.x + (b.x - a.x) * t;
-    const y = a.y + (b.y - a.y) * t + 0.065;
+    const y = a.y + (b.y - a.y) * t + 0.082;
     const z = a.z + (b.z - a.z) * t;
     pushQuad(x, y, z, yaw, 0.18, 1.2);
   }
@@ -566,7 +566,7 @@ function addTrackMarkings(root: THREE.Group, pts: TrackPoint[], quality: Quality
     const line = new THREE.Mesh(new THREE.PlaneGeometry(a.width * 0.9, 0.6), sectorMat);
     line.rotation.x = -Math.PI / 2;
     line.rotation.z = -yaw;
-    line.position.set(x, y + 0.068, z);
+    line.position.set(x, y + 0.085, z);
     group.add(line);
   }
 
@@ -628,7 +628,7 @@ function addGround(root: THREE.Group, pts: TrackData['points'], quality: Quality
     depthWrite: false,
   });
   const { left, right } = getTrackEdges(pts, 1.65);
-  const ao = new THREE.Mesh(buildRibbonGeometry(left, right, -0.04), aoMat);
+  const ao = new THREE.Mesh(buildRibbonGeometry(left, right, -0.06), aoMat);
   ao.renderOrder = -2;
   root.add(ao);
 }
@@ -649,15 +649,15 @@ function addSoftEdgeBlend(
     depthWrite: false,
     side: THREE.DoubleSide,
   });
-  // Sit just under asphalt top (0.055) — never coplanar with kerbs at Noghes/S/F
+  // Sit just under asphalt top — never coplanar with kerbs at join / overpass
   const leftBand = new THREE.Mesh(
-    buildRibbonGeometrySkipJoin(outerL, left, 0.048, pts, 18),
+    buildRibbonGeometrySkipJoin(outerL, left, 0.058, pts, 18),
     mat,
   );
   leftBand.renderOrder = 1;
   root.add(leftBand);
   const rightBand = new THREE.Mesh(
-    buildRibbonGeometrySkipJoin(right, outerR, 0.048, pts, 18),
+    buildRibbonGeometrySkipJoin(right, outerR, 0.058, pts, 18),
     mat.clone(),
   );
   rightBand.renderOrder = 1;
@@ -681,13 +681,13 @@ function addShoulderStrips(
 
   for (const [edge, side] of [[left, -1], [right, 1]] as const) {
     // Concrete runoff immediately outside asphalt (~0.2–2.4 m)
-    // Y well below asphalt (0.055) so Noghes/S/F join stays clean
+    // Y well below asphalt so join / figure-8 stays clean
     const cInner = offsetEdge(edge, side, 0.15);
     const cOuter = offsetEdge(edge, side, 2.4);
     const cL = side < 0 ? cOuter : cInner;
     const cR = side < 0 ? cInner : cOuter;
     const concrete = new THREE.Mesh(
-      buildRibbonGeometrySkipJoin(cL, cR, 0.018, pts, 22),
+      buildRibbonGeometrySkipJoin(cL, cR, 0.02, pts, 22),
       concreteMat,
     );
     concrete.receiveShadow = true;
@@ -698,7 +698,7 @@ function addShoulderStrips(
     const gOuter = offsetEdge(edge, side, 8.5);
     const gL = side < 0 ? gOuter : gInner;
     const gR = side < 0 ? gInner : gOuter;
-    const grassGeo = buildRibbonGeometryTerrain(gL, gR, pts, 0.015);
+    const grassGeo = buildRibbonGeometryTerrain(gL, gR, pts, 0.01);
     const grass = new THREE.Mesh(grassGeo, grassMat);
     grass.receiveShadow = true;
     root.add(grass);
@@ -719,8 +719,13 @@ function buildRibbonGeometryTerrain(
   const indices: number[] = [];
 
   for (let i = 0; i < n; i++) {
-    const ly = Math.max(left[i].y - 0.08, terrainH(pts, left[i].x, left[i].z)) + yLift;
-    const ry = Math.max(right[i].y - 0.08, terrainH(pts, right[i].x, right[i].z)) + yLift;
+    // Never let grass triangles rise into / through nearby asphalt ribbons
+    const lCeil = left[i].y - 0.04;
+    const rCeil = right[i].y - 0.04;
+    const ly =
+      Math.min(lCeil, Math.max(left[i].y - 0.12, terrainH(pts, left[i].x, left[i].z))) + yLift;
+    const ry =
+      Math.min(rCeil, Math.max(right[i].y - 0.12, terrainH(pts, right[i].x, right[i].z))) + yLift;
     positions.push(left[i].x, ly, left[i].z);
     positions.push(right[i].x, ry, right[i].z);
     normals.push(0, 1, 0, 0, 1, 0);
@@ -1162,6 +1167,11 @@ function addTecproBarriers(
       along += Math.hypot(wallBase[i + 1].x - wallBase[i].x, wallBase[i + 1].z - wallBase[i].z);
       continue;
     }
+    // No wall stack where another ribbon is coplanar (Suzuka/Interlagos near-misses)
+    if (hasCoplanarForeignRibbon(pts, i) || hasCoplanarForeignRibbon(pts, i + 1)) {
+      along += Math.hypot(wallBase[i + 1].x - wallBase[i].x, wallBase[i + 1].z - wallBase[i].z);
+      continue;
+    }
     const a = wallBase[i];
     const b = wallBase[i + 1];
     let dx = b.x - a.x;
@@ -1346,8 +1356,72 @@ function addEdgeLine(
   const left = isLeft ? outer : inner;
   const right = isLeft ? inner : outer;
   const mat = new THREE.MeshBasicMaterial({ color: 0xe0e0e8 });
-  // Above asphalt (0.055); skip join to avoid S/F stack flicker
-  root.add(new THREE.Mesh(buildRibbonGeometrySkipJoin(left, right, 0.064, pts, 12), mat));
+  // Above asphalt; skip join to avoid S/F stack flicker
+  root.add(new THREE.Mesh(buildRibbonGeometrySkipJoin(left, right, 0.082, pts, 12), mat));
+}
+
+
+/** True if another centerline sample (far along S) sits nearly coplanar under/over this point. */
+function hasCoplanarForeignRibbon(pts: TrackPoint[], i: number, dyMax = 1.15): boolean {
+  const n = pts.length;
+  if (n < 8) return false;
+  const a = pts[Math.min(i, n - 1)];
+  const total = pts[n - 1]?.s || 1;
+  for (let j = 0; j < n; j += 2) {
+    if (Math.abs(j - i) < 8) continue;
+    let along = Math.abs(pts[j].s - a.s);
+    if (along > total * 0.5) along = total - along;
+    if (along < 80) continue;
+    const dist = Math.hypot(a.x - pts[j].x, a.z - pts[j].z);
+    const half = (a.width + pts[j].width) * 0.55;
+    if (dist > half) continue;
+    if (Math.abs(a.y - pts[j].y) <= dyMax) return true;
+  }
+  return false;
+}
+
+
+/** SkipJoin + omit quads where another ribbon is coplanar (figure-8 / stacked climbs). */
+function buildRibbonGeometrySkipJoinCoplanar(
+  left: THREE.Vector3[],
+  right: THREE.Vector3[],
+  yLift: number,
+  pts: TrackPoint[],
+  skipM: number,
+): THREE.BufferGeometry {
+  const n = Math.min(left.length, right.length, pts.length);
+  const total = pts[pts.length - 1]?.s || 1;
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  for (let i = 0; i < n; i++) {
+    positions.push(left[i].x, left[i].y + yLift, left[i].z);
+    positions.push(right[i].x, right[i].y + yLift, right[i].z);
+    normals.push(0, 1, 0, 0, 1, 0);
+    uvs.push(0, i / Math.max(n - 1, 1), 1, i / Math.max(n - 1, 1));
+  }
+  const nearJoin = (i: number): boolean => {
+    const s = pts[Math.min(i, pts.length - 1)].s;
+    return s < skipM || s > total - skipM;
+  };
+  for (let i = 0; i < n - 1; i++) {
+    if (nearJoin(i) || nearJoin(i + 1)) continue;
+    if (hasCoplanarForeignRibbon(pts, i) || hasCoplanarForeignRibbon(pts, i + 1)) continue;
+    const lx = left[i + 1].x - left[i].x;
+    const lz = left[i + 1].z - left[i].z;
+    const rx = right[i + 1].x - right[i].x;
+    const rz = right[i + 1].z - right[i].z;
+    if (Math.hypot(lx, lz) < 1e-4 && Math.hypot(rx, rz) < 1e-4) continue;
+    const a = i * 2;
+    indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  return geo;
 }
 
 function addKerbs(
@@ -1371,9 +1445,9 @@ function addKerbs(
   const outer = offsetEdge(edge, side, 1.05);
   const left = isLeft ? outer : inner;
   const right = isLeft ? inner : outer;
-  // Above asphalt; skip ~20 m around S/F so Noghes join stays clear
+  // Slightly above asphalt (epsilon); skip join + coplanar foreign ribbons
   const kerb = new THREE.Mesh(
-    buildRibbonGeometrySkipJoin(left, right, 0.068, pts, 20),
+    buildRibbonGeometrySkipJoinCoplanar(left, right, 0.088, pts, 20),
     mat,
   );
   kerb.receiveShadow = true;
@@ -1387,7 +1461,7 @@ function addKerbs(
   const lipOuter = offsetEdge(edge, side, 0.7);
   const lipL = isLeft ? lipOuter : lipInner;
   const lipR = isLeft ? lipInner : lipOuter;
-  root.add(new THREE.Mesh(buildRibbonGeometrySkipJoin(lipL, lipR, 0.09, pts, 20), lipMat));
+  root.add(new THREE.Mesh(buildRibbonGeometrySkipJoinCoplanar(lipL, lipR, 0.11, pts, 20), lipMat));
 }
 
 /**

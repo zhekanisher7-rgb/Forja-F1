@@ -533,19 +533,26 @@ export function sampleTerrainHeight(pts: TrackPoint[], x: number, z: number, mon
 
   if (!found) return base;
 
-  // Under elevated overpass: use lower ribbon for ground
+  // Under elevated / stacked ribbons: always seat ground on the LOWER deck
   let trackGroundY = bestY;
-  if (bestY - minNearbyY > 2.2 && bestClear < 10) {
+  if (bestY - minNearbyY > 1.4 && bestClear < 14) {
     trackGroundY = minNearbyY;
   }
 
   // Soft blend from track shoulder into surrounding terrain.
-  // On-asphalt (clearance < 0): sink well below ribbon so S/F / Noghes never z-fight.
-  const underAsphalt = bestClear < 0.35;
-  const sink = underAsphalt ? 0.14 : 0.08;
+  // On-asphalt: sink well below every nearby ribbon so grass/heightfield never z-fights
+  // asphalt (Interlagos hills, Suzuka figure-8 lower deck, Monaco Noghes).
+  const underAsphalt = bestClear < 0.55;
+  const nearShoulder = bestClear < 3.5;
+  const sink = underAsphalt ? 0.22 : nearShoulder ? 0.12 : 0.08;
   const edge = Math.max(0, bestClear);
   const u = Math.min(1, edge / corridor);
   const s = u * u * (3 - 2 * u);
-  const nearY = trackGroundY - sink;
+  let nearY = trackGroundY - sink;
+  // Hard ceiling: terrain must stay under the lowest nearby ribbon inside the corridor
+  if (found && Number.isFinite(minNearbyY) && bestClear < 14) {
+    const ceiling = minNearbyY - (underAsphalt ? 0.2 : 0.1);
+    nearY = Math.min(nearY, ceiling);
+  }
   return nearY * (1 - s) + base * s;
 }
