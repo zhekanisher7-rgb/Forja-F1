@@ -1,6 +1,15 @@
 import * as THREE from 'three';
 import type { TrackData, TrackPoint } from '../tracks/Track';
-import { getTrackEdges, sampleTerrainHeight } from '../tracks/Track';
+import { getTrackEdges, sampleTerrainHeight, TRACK_BARRIER_OUT } from '../tracks/Track';
+
+/** Set per createTrackMesh — Monaco casino/tunnel hills vs generic ribbon terrain. */
+let _monacoLandmarks = false;
+function terrainH(pts: TrackPoint[], x: number, z: number): number {
+  return sampleTerrainHeight(pts, x, z, _monacoLandmarks);
+}
+
+/** Barrier offset from asphalt edge — shared with physics (TRACK_BARRIER_OUT) */
+const BARRIER_OUT = TRACK_BARRIER_OUT;
 import { profileFor, type GraphicsTier, type QualityProfile } from './GraphicsQuality';
 
 /** Procedural asphalt — grain, tire wear, oil patches, edge darkening */
@@ -354,6 +363,7 @@ export function createTrackMesh(
   root.name = 'track';
 
   const pts = track.points;
+  _monacoLandmarks = track.id === 'monaco';
   const { left, right } = getTrackEdges(pts);
 
   addGround(root, pts, quality);
@@ -419,7 +429,7 @@ export function createTrackMesh(
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(g.w, g.d), gravelMat);
     mesh.rotation.x = -Math.PI / 2;
     mesh.rotation.z = g.rot;
-    const gy = sampleTerrainHeight(pts, g.x, g.z) + 0.03;
+    const gy = terrainH(pts, g.x, g.z) + 0.03;
     mesh.position.set(g.x, Math.max((g.y ?? 0) + 0.02, gy), g.z);
     mesh.receiveShadow = true;
     root.add(mesh);
@@ -452,10 +462,14 @@ export function createTrackMesh(
     }
   }
 
-  addTunnel(root, pts, 0.48, 0.58, quality);
-  addTunnelEntranceRocks(root, pts, 0.48, quality);
+  if (track.tunnel) {
+    addTunnel(root, pts, track.tunnel.startFrac, track.tunnel.endFrac, quality);
+    addTunnelEntranceRocks(root, pts, track.tunnel.startFrac, quality);
+  }
   addOverpassSupports(root, pts, quality);
-  addHarbor(root, pts, quality);
+  if (track.harbor) {
+    addHarbor(root, pts, quality);
+  }
   addScenery(root, pts, left, right, quality, night);
 
   // Start/finish stripe — thin decal only (never a thick grey box on asphalt)
@@ -587,7 +601,7 @@ function addGround(root: THREE.Group, pts: TrackData['points'], quality: Quality
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i) + cx;
     const z = pos.getZ(i) + cz;
-    pos.setY(i, sampleTerrainHeight(pts, x, z));
+    pos.setY(i, terrainH(pts, x, z));
   }
   pos.needsUpdate = true;
   geo.computeVertexNormals();
@@ -705,8 +719,8 @@ function buildRibbonGeometryTerrain(
   const indices: number[] = [];
 
   for (let i = 0; i < n; i++) {
-    const ly = Math.max(left[i].y - 0.08, sampleTerrainHeight(pts, left[i].x, left[i].z)) + yLift;
-    const ry = Math.max(right[i].y - 0.08, sampleTerrainHeight(pts, right[i].x, right[i].z)) + yLift;
+    const ly = Math.max(left[i].y - 0.08, terrainH(pts, left[i].x, left[i].z)) + yLift;
+    const ry = Math.max(right[i].y - 0.08, terrainH(pts, right[i].x, right[i].z)) + yLift;
     positions.push(left[i].x, ly, left[i].z);
     positions.push(right[i].x, ry, right[i].z);
     normals.push(0, 1, 0, 0, 1, 0);
@@ -767,7 +781,7 @@ function addOverpassSupports(
     const yaw = Math.atan2(b.x - a.x, b.z - a.z);
     const groundY = crossingIdx.has(i)
       ? (crossings.find((s) => i >= s.i0 && i <= s.i1)?.lowerY ?? 0)
-      : sampleTerrainHeight(pts, mx, mz);
+      : terrainH(pts, mx, mz);
     const pillarTop = midY - 0.55;
     const pillarH = pillarTop - groundY;
     if (pillarH < 2.0) continue;
@@ -1127,7 +1141,7 @@ function addTecproBarriers(
   quality: QualityProfile,
   pts: TrackPoint[],
 ): void {
-  const wallBase = offsetEdge(edge, side, 1.2);
+  const wallBase = offsetEdge(edge, side, BARRIER_OUT);
   const wallH = 1.25;
   const n = Math.min(wallBase.length, pts.length);
   if (n < 2) return;
@@ -1445,7 +1459,7 @@ function addTunnelEntranceRocks(
     const px = a.x + Math.sin(yaw) * along + nx * out;
     const pz = a.z + Math.cos(yaw) * along + nz * out;
     if (intersectsRoadRibbon(pts, px, pz, 5.5, quality.sceneryMargin + 1.5)) continue;
-    const gy = sampleTerrainHeight(pts, px, pz);
+    const gy = terrainH(pts, px, pz);
     if (!acceptPropY(pts, px, pz, gy, 2.5)) continue;
 
     const sx = 5.5 + (i % 4) * 1.6;
@@ -1497,7 +1511,7 @@ function addTunnelEntranceRocks(
   const lx = a.x + nx * (baseOff + 2.5);
   const lz = a.z + nz * (baseOff + 2.5);
   if (!intersectsRoadRibbon(pts, lx, lz, 6, quality.sceneryMargin + 2)) {
-    const gy = sampleTerrainHeight(pts, lx, lz);
+    const gy = terrainH(pts, lx, lz);
     if (acceptPropY(pts, lx, lz, gy, 2.5)) {
       const landmark = new THREE.Mesh(
         new THREE.DodecahedronGeometry(1, quality.treeDetail >= 6 ? 1 : 0),
@@ -1588,9 +1602,6 @@ function addTunnel(
   }
 }
 
-/** Barrier offset from asphalt edge (matches Tecpro soft walls) */
-const BARRIER_OUT = 1.2;
-
 /**
  * Min distance from asphalt edge to prop center so AABB stays outside
  * asphalt + barriers + margin. `halfExtent` is half-size toward the track.
@@ -1676,7 +1687,7 @@ function placeAlongEdgeNormal(
     const radius = halfExtent * 1.05;
     if (!intersectsRoadRibbon(pts, x, z, radius, margin)) {
       // Sit ON terrain (not floating at raw edge Y)
-      const groundY = sampleTerrainHeight(pts, x, z);
+      const groundY = terrainH(pts, x, z);
       // Reject if terrain wildly disagrees with nearby track (bad overpass under-side)
       if (Math.abs(groundY - p.y) > 14) {
         dist += halfExtent * 0.85 + 1.5;
@@ -1691,7 +1702,7 @@ function placeAlongEdgeNormal(
 
 /** Drop props whose base Y is not near terrain (floating / buried). */
 function acceptPropY(pts: TrackPoint[], x: number, z: number, baseY: number, tol = 1.25): boolean {
-  const gy = sampleTerrainHeight(pts, x, z);
+  const gy = terrainH(pts, x, z);
   return Math.abs(baseY - gy) <= tol;
 }
 
@@ -1896,7 +1907,7 @@ function addScenery(
       const hz = baseZ + Math.floor(k / 3) * 18;
       const hh = 12 + ((c + k) % 5) * 3.5;
       if (!intersectsRoadRibbon(pts, hx, hz, 8, margin)) {
-        const gy = sampleTerrainHeight(pts, hx, hz);
+        const gy = terrainH(pts, hx, hz);
         if (!acceptPropY(pts, hx, hz, gy, 2.0)) continue;
         buildings.push({
           x: hx, y: gy + hh / 2, z: hz,

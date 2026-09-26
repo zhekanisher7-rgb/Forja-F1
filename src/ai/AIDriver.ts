@@ -2,7 +2,7 @@
  * Basic Monaco AI — follows racing line with skill-based speed, simple overtake offset.
  */
 import * as THREE from 'three';
-import { sampleTrack, type TrackData } from '../tracks/Track';
+import { sampleTrack, applyTrackBarrierClamp, type TrackData } from '../tracks/Track';
 import {
   VehiclePhysics,
   createVehicleState,
@@ -150,17 +150,17 @@ export function updateAICar(ai: AICar, track: TrackData, dt: number): void {
   // Occasional ERS on straights
   input.ers = curv < 0.05 && speed > 30 && v.ers > 0.15 && skill > 0.35;
 
-  // Track walls soft — keep on ribbon
+  // Track walls = Tecpro face (same hard clamp as player)
   const half = near.width / 2;
   const latNow =
     (v.x - near.x) * Math.cos(near.yaw) - (v.z - near.z) * Math.sin(near.yaw);
-  let wallHit = 0;
-  if (Math.abs(latNow) > half + 0.6) {
-    wallHit = Math.abs(latNow) - half;
-    const side = Math.sign(latNow);
-    v.x -= Math.cos(near.yaw) * side * wallHit * 0.4;
-    v.z += Math.sin(near.yaw) * side * wallHit * 0.4;
-    v.speed *= 0.92;
+  const clamped = applyTrackBarrierClamp(v.x, v.z, v.yaw, latNow, half);
+  let wallHit = clamped.wallHit;
+  if (wallHit > 0) {
+    v.x = clamped.x;
+    v.z = clamped.z;
+    v.yaw = clamped.yaw;
+    v.speed *= 0.9;
   }
 
   // DRS zone flag from track

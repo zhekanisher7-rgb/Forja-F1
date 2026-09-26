@@ -24,6 +24,38 @@ export interface TrackData {
   /** gravel patches as local polygons in world xz */
   gravel: { x: number; z: number; w: number; d: number; rot: number; y?: number }[];
   startIndex: number;
+  /** Monaco-style harbor water / quay (optional) */
+  harbor?: boolean;
+  /** Tunnel along track length fractions [start, end] */
+  tunnel?: { startFrac: number; endFrac: number };
+}
+
+/** Visual Tecpro soft-wall offset from asphalt edge (m) — physics must match. */
+export const TRACK_BARRIER_OUT = 1.2;
+
+/**
+ * Hard barrier clamp: keep car at asphalt edge + TRACK_BARRIER_OUT (matches Tecpro mesh).
+ * Soft runoff inside the barrier; solid stop at the wall face — no ghosting through.
+ */
+export function applyTrackBarrierClamp(
+  x: number,
+  z: number,
+  yaw: number,
+  lateral: number,
+  halfWidth: number,
+): { x: number; z: number; yaw: number; wallHit: number } {
+  const limit = halfWidth + TRACK_BARRIER_OUT;
+  const lat = lateral;
+  if (Math.abs(lat) <= limit) {
+    return { x, z, yaw, wallHit: 0 };
+  }
+  const over = Math.abs(lat) - limit;
+  const side = Math.sign(lat) || 1;
+  // Full snap onto barrier face (visual = physics)
+  const nx = x - Math.cos(yaw) * side * over;
+  const nz = z + Math.sin(yaw) * side * over;
+  const nyaw = yaw - side * Math.min(0.12, 0.025 + over * 0.035);
+  return { x: nx, z: nz, yaw: nyaw, wallHit: over };
 }
 
 type RawPt = { x: number; z: number; y?: number; width?: number };
@@ -408,7 +440,7 @@ export function getTrackEdges(pts: TrackPoint[], halfWidthScale = 1): {
  * Follows the track corridor (preferring the lower ribbon under overpasses),
  * blends into gentle hills / harbor quay further out.
  */
-export function sampleTerrainHeight(pts: TrackPoint[], x: number, z: number): number {
+export function sampleTerrainHeight(pts: TrackPoint[], x: number, z: number, monacoLandmarks = false): number {
   let bestClear = Infinity;
   let bestY = 0;
   let minNearbyY = Infinity;
@@ -440,45 +472,63 @@ export function sampleTerrainHeight(pts: TrackPoint[], x: number, z: number): nu
     }
   }
 
-  // Procedural hills / cliffs / harbor (cheap, no extra draw calls)
-  // Multi-frequency landforms: broad hills + mid ridges + fine rocky noise
+  // Procedural hills (cheap). Monaco keeps iconic casino/tunnel landmarks;
+  // other tracks use bbox-relative landforms so scenery follows the ribbon.
+  let cx = 0;
+  let cz = 0;
+  let counted = 0;
+  for (let i = 0; i < n; i += Math.max(1, Math.floor(n / 24))) {
+    cx += pts[i].x;
+    cz += pts[i].z;
+    counted++;
+  }
+  if (counted > 0) {
+    cx /= counted;
+    cz /= counted;
+  }
+  const lx = x - cx;
+  const lz = z - cz;
   const hill =
-    Math.sin(x * 0.011) * Math.cos(z * 0.009) * 2.55 +
-    Math.sin(x * 0.0045 + z * 0.0065) * 4.1 +
-    Math.sin(x * 0.023 - z * 0.017) * 1.45 +
-    Math.sin(x * 0.038 + z * 0.029) * Math.cos(z * 0.021) * 0.85;
-  // Casino / Massenet plateau with stepped hillside terraces
-  const casinoDist = Math.hypot(x - 370, z - 500);
-  const casino = Math.max(0, 1 - casinoDist / 220) * 9.8;
-  const casinoTerraces =
-    Math.max(0, 1 - casinoDist / 160) *
-    (Math.sin(x * 0.055) * 1.35 + Math.cos(z * 0.048) * 1.1);
-  // Rocky rise around Monaco tunnel mouth (Portier → tunnel) + side gullies
-  const tunnelDist = Math.hypot(x - 400, z - 160);
-  const tunnelCliff = Math.max(0, 1 - tunnelDist / 95) * 8.6;
-  const tunnelGully =
-    Math.max(0, 1 - tunnelDist / 70) *
-    Math.abs(Math.sin(x * 0.07 + z * 0.05)) * 2.4;
-  // Beau Rivage / Magasin climb hills (north of Portier overpass)
-  const climbHill =
-    Math.max(0, 1 - Math.hypot(x - 300, z - 340) / 130) *
-    (3.2 + Math.sin(x * 0.03) * 1.4);
-  const quayZone = x > 120 && z < 80 && z > -140;
-  let base = Math.max(
-    -0.4,
-    hill * 0.48 + casino + casinoTerraces + tunnelCliff * 0.9 + tunnelGully * 0.55 + climbHill,
-  );
-  if (quayZone) {
-    // Harbor flat / quay level — props sit on quay, not floating over water
-    // Rocky bank lip near waterline for readable harbor edge
-    const quay = 0.35;
-    const towardWater = Math.max(0, Math.min(1, (40 - z) / 80));
-    const bankLip =
-      Math.max(0, 1 - Math.abs(z + 20) / 55) *
-      Math.max(0, 1 - Math.abs(x - 240) / 90) *
-      (0.55 + Math.sin(x * 0.08) * 0.25);
-    base = quay * (1 - towardWater * 0.85) + (-0.35) * towardWater * 0.85;
-    base = Math.max(base, hill * 0.18) + bankLip * (1 - towardWater * 0.6);
+    Math.sin(lx * 0.011) * Math.cos(lz * 0.009) * 2.55 +
+    Math.sin(lx * 0.0045 + lz * 0.0065) * 4.1 +
+    Math.sin(lx * 0.023 - lz * 0.017) * 1.45 +
+    Math.sin(lx * 0.038 + lz * 0.029) * Math.cos(lz * 0.021) * 0.85;
+  let base = Math.max(-0.4, hill * 0.48);
+  if (monacoLandmarks) {
+    const casinoDist = Math.hypot(x - 370, z - 500);
+    const casino = Math.max(0, 1 - casinoDist / 220) * 9.8;
+    const casinoTerraces =
+      Math.max(0, 1 - casinoDist / 160) *
+      (Math.sin(x * 0.055) * 1.35 + Math.cos(z * 0.048) * 1.1);
+    const tunnelDist = Math.hypot(x - 400, z - 160);
+    const tunnelCliff = Math.max(0, 1 - tunnelDist / 95) * 8.6;
+    const tunnelGully =
+      Math.max(0, 1 - tunnelDist / 70) *
+      Math.abs(Math.sin(x * 0.07 + z * 0.05)) * 2.4;
+    const climbHill =
+      Math.max(0, 1 - Math.hypot(x - 300, z - 340) / 130) *
+      (3.2 + Math.sin(x * 0.03) * 1.4);
+    base = Math.max(
+      -0.4,
+      hill * 0.48 + casino + casinoTerraces + tunnelCliff * 0.9 + tunnelGully * 0.55 + climbHill,
+    );
+    const quayZone = x > 120 && z < 80 && z > -140;
+    if (quayZone) {
+      const quay = 0.35;
+      const towardWater = Math.max(0, Math.min(1, (40 - z) / 80));
+      const bankLip =
+        Math.max(0, 1 - Math.abs(z + 20) / 55) *
+        Math.max(0, 1 - Math.abs(x - 240) / 90) *
+        (0.55 + Math.sin(x * 0.08) * 0.25);
+      base = quay * (1 - towardWater * 0.85) + (-0.35) * towardWater * 0.85;
+      base = Math.max(base, hill * 0.18) + bankLip * (1 - towardWater * 0.6);
+    }
+  } else {
+    // Gentle ridge near high parts of the ribbon
+    const ridge =
+      Math.max(0, 1 - Math.hypot(lx, lz) / 280) *
+      (2.8 + Math.sin(lx * 0.028) * 1.2 + Math.cos(lz * 0.022) * 1.0);
+    base = Math.max(-0.4, hill * 0.55 + ridge);
   }
 
   if (!found) return base;

@@ -7,6 +7,7 @@ import {
   type GraphicsTier,
   DEFAULT_GRAPHICS,
 } from '../render/GraphicsQuality';
+import { TRACK_OPTIONS, type TrackId } from '../tracks';
 
 export type GameMode = 'quick' | 'timetrial' | 'tutorial';
 
@@ -20,6 +21,7 @@ export interface RaceSettings {
   weather: WeatherType;
   tires: TireCompound;
   laps: number;
+  trackId: TrackId;
 }
 
 export type MenuCallbacks = {
@@ -57,6 +59,7 @@ export class MainMenu {
     weather: 'dry',
     tires: 'slick',
     laps: 3,
+    trackId: 'monaco',
   };
   private graphics: GraphicsSettings;
   private view: 'main' | 'race' | 'settings' | 'credits' = 'main';
@@ -119,6 +122,12 @@ export class MainMenu {
               <input type="color" id="c-sec" value="${this.settings.customSecondary}" />
               <input type="color" id="c-acc" value="${this.settings.customAccent}" />
             </div>
+          </div>
+          <div class="form-row">
+            <label>Трасса</label>
+            <select id="track">
+              ${TRACK_OPTIONS.map((tr) => `<option value="${tr.id}" ${this.settings.trackId === tr.id ? 'selected' : ''}>${tr.nameRu}</option>`).join('')}
+            </select>
           </div>
           <div class="form-row">
             <label>Погода</label>
@@ -232,6 +241,9 @@ export class MainMenu {
     });
     const diff = this.el.querySelector('#diff') as HTMLSelectElement | null;
     if (diff) diff.addEventListener('change', () => (this.settings.difficulty = diff.value as Difficulty));
+    const trackSel = this.el.querySelector('#track') as HTMLSelectElement | null;
+    if (trackSel)
+      trackSel.addEventListener('change', () => (this.settings.trackId = trackSel.value as TrackId));
     const weather = this.el.querySelector('#weather') as HTMLSelectElement | null;
     if (weather) weather.addEventListener('change', () => (this.settings.weather = weather.value as WeatherType));
     const tires = this.el.querySelector('#tires') as HTMLSelectElement | null;

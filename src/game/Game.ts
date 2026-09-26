@@ -7,8 +7,8 @@ import {
   type VehicleState,
 } from '../physics/VehiclePhysics';
 import { createWeather } from '../physics/Weather';
-import { createMonacoTrack } from '../tracks/Monaco';
-import { projectOnTrack, sampleTrack, type TrackData } from '../tracks/Track';
+import { getTrackById } from '../tracks';
+import { projectOnTrack, sampleTrack, applyTrackBarrierClamp, type TrackData } from '../tracks/Track';
 import {
   createRenderer,
   createScene,
@@ -53,7 +53,7 @@ export class Game {
   private results: ResultsScreen;
   private countdownEl: HTMLDivElement;
 
-  private track: TrackData = createMonacoTrack();
+  private track: TrackData = getTrackById('monaco');
   private trackRoot: THREE.Group | null = null;
   private carMesh: THREE.Group | null = null;
   private physics: VehiclePhysics | null = null;
@@ -236,7 +236,7 @@ export class Game {
     const qp = profileFor(this.graphics.tier);
     this.renderer.toneMappingExposure = this.graphics.night ? 0.9 : qp.exposure;
 
-    this.track = createMonacoTrack();
+    this.track = getTrackById(settings.trackId || 'monaco');
     this.trackRoot = createTrackMesh(this.track, this.graphics.tier, this.graphics.night);
     this.scene.add(this.trackRoot);
 
@@ -489,17 +489,22 @@ export class Game {
       this.vehicle.y,
     );
     const halfW = proj.width / 2;
-    let wallHit = 0;
-    const limit = halfW + 0.8;
-    if (Math.abs(proj.lateral) > limit) {
-      wallHit = Math.abs(proj.lateral) - limit;
-      const push = (Math.abs(proj.lateral) - halfW) * 0.85;
-      const side = Math.sign(proj.lateral);
-      this.vehicle.x -= Math.cos(proj.yaw) * side * push * 0.5;
-      this.vehicle.z += Math.sin(proj.yaw) * side * push * 0.5;
-      this.vehicle.yaw += -side * 0.02;
-      if (!(wallHit > this.prevWallHit + 0.05 || Math.abs(this.vehicle.speed) > 10)) {
-        wallHit *= 0.3;
+    // Hard clamp at Tecpro face (TRACK_BARRIER_OUT) — visual barriers = physics walls
+    const clamped = applyTrackBarrierClamp(
+      this.vehicle.x,
+      this.vehicle.z,
+      this.vehicle.yaw,
+      proj.lateral,
+      halfW,
+    );
+    let wallHit = clamped.wallHit;
+    if (wallHit > 0) {
+      this.vehicle.x = clamped.x;
+      this.vehicle.z = clamped.z;
+      this.vehicle.yaw = clamped.yaw;
+      // Soften only tiny scrapes at very low speed (still solid barrier)
+      if (!(wallHit > this.prevWallHit + 0.05 || Math.abs(this.vehicle.speed) > 8)) {
+        wallHit *= 0.45;
       }
     }
     this.prevWallHit = wallHit;

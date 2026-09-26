@@ -108,5 +108,7 @@ export function createMonacoTrack(): TrackData {
       { x: -30, z: 90, w: 12, d: 10, rot: 0.6, y: 2.5 },
     ],
     startIndex: 0,
+    harbor: true,
+    tunnel: { startFrac: 0.48, endFrac: 0.58 },
   };
 }

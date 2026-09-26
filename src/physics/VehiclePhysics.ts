@@ -72,8 +72,8 @@ export const PLAYER_VEHICLE_SPEC = {
 
 /** Arcade yaw blend toward limited steer rate (same in every mode). */
 export const PLAYER_STEER_YAW_SMOOTH = {
-  keep: 0.58,
-  apply: 0.42,
+  keep: 0.42, // was 0.58 — less understeer lag
+  apply: 0.58, // was 0.42 — snappier yaw response (QR/TT shared)
 } as const;
 
 const GEAR_RATIOS = [0, 3.2, 2.4, 1.9, 1.55, 1.3, 1.12, 0.98, 0.88];
@@ -149,11 +149,11 @@ export class VehiclePhysics {
     const drsDownforceMul = state.drsOpen ? 0.85 : 1;
 
     // ERS boost (disabled when out of fuel — no drive force at all)
-    // ~29% stronger than prior 120 kW; drain unchanged (~8.3 s full bar) so QR/TT stay usable
+    // Exactly 200 kW; drain ~0.125/s → ~8 s full-bar (still usable in QR/TT)
     let ersBoost = 0;
     if (state.fuel > 0 && input.ers && state.ers > 0.01 && state.speed > 5) {
-      ersBoost = 155; // kW extra
-      state.ers = Math.max(0, state.ers - 0.12 * dt);
+      ersBoost = 200; // kW extra — exact request
+      state.ers = Math.max(0, state.ers - 0.125 * dt);
     } else if (state.speed > 20 && input.brake > 0.3) {
       // regen
       state.ers = Math.min(1, state.ers + 0.04 * dt * input.brake);
@@ -234,9 +234,9 @@ export class VehiclePhysics {
     if (Math.abs(state.speed) < 0.05 && mainBrake > 0.1) state.speed = 0;
     if (state.gear !== -1 && state.speed < -0.5) state.speed = 0;
 
-    // Steering — arcade: responsive but not twitchy (A left / D right).
-    // Wider track needs enough turn-in at mid speed without high-speed snap.
-    const maxSteer = 0.56 / (1 + Math.abs(state.speed) / 38);
+    // Steering — arcade snappy turn-in (A left / D right). Less understeer feel.
+    // Wider track: enough mid-speed bite without high-speed snap. QR/TT identical.
+    const maxSteer = 0.70 / (1 + Math.abs(state.speed) / 48);
     const steerAngle = input.steer * maxSteer;
     const latGripBudget = grip * (1 + downforce / (this.cfg.mass * 9.81)) * 0.95;
     const yawRate = (state.speed / Math.max(0.1, this.cfg.wheelbase)) * Math.tan(steerAngle);
