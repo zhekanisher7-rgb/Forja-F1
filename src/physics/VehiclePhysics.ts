@@ -40,6 +40,8 @@ export interface VehicleState {
   tires: TireState;
   damage: number; // 0..1
   wheelLock: boolean;
+  /** Visual / debug front-wheel steer angle (rad, signed). */
+  steerAngle: number;
   lap: number;
   distanceAlong: number; // track progress meters
   finished: boolean;
@@ -110,6 +112,7 @@ export function createVehicleState(
     tires: createTires(compound),
     damage: 0,
     wheelLock: false,
+    steerAngle: 0,
     lap: 1,
     distanceAlong: 0,
     finished: false,
@@ -243,6 +246,7 @@ export class VehiclePhysics {
     // Steering — softer arcade (A left / D right). More yaw keep, lower maxSteer. QR=TT.
     const maxSteer = 0.68 / (1 + Math.abs(state.speed) / 50);
     const steerAngle = input.steer * maxSteer;
+    state.steerAngle = steerAngle;
     const latGripBudget = grip * (1 + downforce / (this.cfg.mass * 9.81)) * 1.05;
     const yawRate = (state.speed / Math.max(0.1, this.cfg.wheelbase)) * Math.tan(steerAngle);
     const maxYaw = latGripBudget * 9.81 / Math.max(1, Math.abs(state.speed));

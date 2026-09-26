@@ -5,17 +5,18 @@
  *  - Dunlop portal (50,418): upper y8.0 / under y1.15 (ΔY≥6.8)
  *  - Return flyover over 130R near (36,−55): deck y7.0 / 130R y0.2 (ΔY≥6.5)
  *
- * Critical: flyover descent finishes to y≈0 on a south stub (x≈0, z≲−35)
- * BEFORE joining S/F — no coplanar stack on the outbound start ribbon
- * (that landing caused the striped asphalt z-fight at the junction).
+ * End-of-lap: after the flyover, descend WEST of S/F and rejoin along the
+ * start straight (eastbound). Never land south then turn 90° into S/F —
+ * that Catmull hook caused striped asphalt z-fight + barriers mid-ribbon.
  */
 import { buildCenterline, trackLength, type TrackData } from './Track';
 
 const ROAD_WIDTH_SCALE = 2.0;
 
 const RAW: { x: number; z: number; y?: number; width?: number }[] = [
-  // Pit / start — outbound east (keep z≥0 so south stub stays clear)
+  // Pit / start — outbound east
   { x: 0, z: 0, y: 0, width: 12 },
+  { x: 35, z: 2.5, y: 0, width: 12 },
   { x: 100, z: 8, y: 0, width: 12 },
   { x: 180, z: 20, y: 0.1, width: 11 },
   // Esses NE
@@ -79,11 +80,17 @@ const RAW: { x: number; z: number; y?: number; width?: number }[] = [
   { x: 40, z: -95, y: 4.2, width: 10 },
   { x: 38, z: -70, y: 6.6, width: 10 },
   { x: 36, z: -55, y: 7.0, width: 10 }, // OVER 130R
-  // Stay elevated until north of 130R (z≳−28), then drop on south stub into S/F
-  { x: 28, z: -32, y: 6.4, width: 10 },
-  { x: 12, z: -26, y: 3.5, width: 10 },
-  { x: 2, z: -30, y: 0.35, width: 11 },
-  { x: 0, z: -18, y: 0.05, width: 12 },
+  // Descend WEST of S/F (clear of 130R & outbound), then rejoin eastbound
+  { x: 22, z: -38, y: 6.2, width: 10 },
+  { x: 5, z: -30, y: 4.0, width: 10 },
+  { x: -12, z: -22, y: 1.6, width: 11 },
+  { x: -28, z: -10, y: 0.35, width: 12 },
+  { x: -32, z: 0.2, y: 0.08, width: 12 },
+  { x: -22, z: 0.4, y: 0.03, width: 12 },
+  { x: -14, z: 0.35, y: 0.015, width: 12 },
+  { x: -8, z: 0.25, y: 0.008, width: 12 },
+  { x: -4, z: 0.12, y: 0.003, width: 12 },
+  { x: -1.5, z: 0.04, y: 0, width: 12 },
   { x: 0, z: 0, y: 0, width: 12 },
 ].map((p) => ({ ...p, width: (p.width ?? 10) * ROAD_WIDTH_SCALE }));
 

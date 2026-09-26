@@ -205,7 +205,7 @@ function makeSponsorAtlas(): THREE.CanvasTexture {
   return tex;
 }
 
-/** Facade with window grid — shared by all buildings (1 draw call via InstancedMesh) */
+/** Facade with window grid, balcony bands, cornice — shared by InstancedMesh buildings */
 function makeBuildingFacadeTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 128;
@@ -214,11 +214,20 @@ function makeBuildingFacadeTexture(): THREE.CanvasTexture {
   // Warm Mediterranean plaster
   ctx.fillStyle = '#a89888';
   ctx.fillRect(0, 0, 128, 256);
-  // Shutters / balcony hint band
+  // Floor cornice bands
+  for (const y of [64, 128, 192]) {
+    ctx.fillStyle = '#8a7868';
+    ctx.fillRect(0, y - 2, 128, 4);
+    ctx.fillStyle = 'rgba(255,240,220,0.12)';
+    ctx.fillRect(0, y - 2, 128, 1);
+  }
+  // Balcony / shutter hint
   ctx.fillStyle = '#6a5040';
   ctx.fillRect(0, 120, 128, 6);
+  ctx.fillStyle = '#4a3830';
+  for (let x = 8; x < 128; x += 32) ctx.fillRect(x, 118, 18, 3);
   // subtle plaster noise
-  for (let i = 0; i < 800; i++) {
+  for (let i = 0; i < 900; i++) {
     const v = 140 + Math.random() * 40;
     ctx.fillStyle = `rgba(${v},${v - 8},${v - 16},0.08)`;
     ctx.fillRect(Math.random() * 128, Math.random() * 256, 2, 2);
@@ -229,19 +238,35 @@ function makeBuildingFacadeTexture(): THREE.CanvasTexture {
   const mh = 256 / rows;
   for (let r = 0; r < rows; r++) {
     for (let col = 0; col < cols; col++) {
-      const lit = Math.random() > 0.45;
-      ctx.fillStyle = lit ? 'rgba(255,220,160,0.8)' : 'rgba(35,32,28,0.78)';
+      const lit = Math.random() > 0.42;
+      ctx.fillStyle = lit ? 'rgba(255,220,160,0.82)' : 'rgba(35,32,28,0.78)';
       const pad = 4;
-      ctx.fillRect(col * mw + pad, r * mh + pad + 2, mw - pad * 2, mh - pad * 2 - 4);
+      const wx = col * mw + pad;
+      const wy = r * mh + pad + 2;
+      const ww = mw - pad * 2;
+      const wh = mh - pad * 2 - 4;
+      ctx.fillRect(wx, wy, ww, wh);
+      // window mullion
+      ctx.strokeStyle = lit ? 'rgba(180,140,80,0.35)' : 'rgba(20,18,16,0.5)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(wx + 0.5, wy + 0.5, ww - 1, wh - 1);
+      ctx.beginPath();
+      ctx.moveTo(wx + ww * 0.5, wy);
+      ctx.lineTo(wx + ww * 0.5, wy + wh);
+      ctx.moveTo(wx, wy + wh * 0.5);
+      ctx.lineTo(wx + ww, wy + wh * 0.5);
+      ctx.stroke();
       if (lit) {
-        ctx.fillStyle = 'rgba(255,240,200,0.25)';
-        ctx.fillRect(col * mw + pad, r * mh + pad + 2, (mw - pad * 2) * 0.45, mh - pad * 2 - 4);
+        ctx.fillStyle = 'rgba(255,240,200,0.28)';
+        ctx.fillRect(wx, wy, ww * 0.45, wh);
       }
     }
   }
-  // roof band
-  ctx.fillStyle = '#6a6058';
-  ctx.fillRect(0, 0, 128, 10);
+  // roof / cornice band
+  ctx.fillStyle = '#5a5048';
+  ctx.fillRect(0, 0, 128, 12);
+  ctx.fillStyle = '#7a6a58';
+  ctx.fillRect(0, 10, 128, 3);
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -402,15 +427,17 @@ export function createTrackMesh(
   // Soft edge darken blend (slightly wider, transparent) — hides hard rectangle seams
   addSoftEdgeBlend(root, left, right, pts);
 
-  // Center racing line — raised, no polygonOffset flicker
-  const { left: ll, right: rr } = getTrackEdges(pts, 0.12);
-  const lineMat = new THREE.MeshBasicMaterial({
-    color: 0x2a3540,
+  // Subtle center wear line — skip join/coplanar so it never z-fights asphalt
+  const { left: ll, right: rr } = getTrackEdges(pts, 0.1);
+  const lineMat = new THREE.MeshStandardMaterial({
+    color: 0x1a1e24,
     transparent: true,
-    opacity: 0.4,
+    opacity: 0.32,
     depthWrite: false,
+    roughness: 0.95,
+    metalness: 0,
   });
-  root.add(new THREE.Mesh(buildRibbonGeometry(ll, rr, 0.1), lineMat));
+  root.add(new THREE.Mesh(buildRibbonGeometrySkipJoinCoplanar(ll, rr, 0.1, pts, 18), lineMat));
 
   addEdgeLine(root, left, true, pts);
   addEdgeLine(root, right, false, pts);
@@ -435,12 +462,20 @@ export function createTrackMesh(
     root.add(mesh);
   }
 
+  // DRS markers — dark posts outside Tecpro only (no glowing green beam / gate across asphalt)
   const drsMat = new THREE.MeshStandardMaterial({
-    color: 0x22cc66,
-    emissive: 0x115522,
-    emissiveIntensity: 0.35,
-    transparent: true,
-    opacity: 0.75,
+    color: 0x1a3a28,
+    emissive: 0x0a2818,
+    emissiveIntensity: 0.12,
+    roughness: 0.65,
+    metalness: 0.25,
+  });
+  const drsSignMat = new THREE.MeshStandardMaterial({
+    color: 0x2a8a48,
+    emissive: 0x103820,
+    emissiveIntensity: 0.18,
+    roughness: 0.55,
+    metalness: 0.15,
   });
   for (const zone of track.drsZones) {
     for (const s of [zone.startS, zone.endS]) {
@@ -449,13 +484,14 @@ export function createTrackMesh(
       const next = pts[Math.min(pts.length - 1, idx + 1)];
       const yaw = Math.atan2(next.x - p.x, next.z - p.z);
       const gate = new THREE.Group();
-      const postL = new THREE.Mesh(new THREE.BoxGeometry(0.3, 3, 0.3), drsMat);
-      postL.position.set(-p.width / 2 - 0.5, 1.5, 0);
-      const postR = postL.clone();
-      postR.position.x = p.width / 2 + 0.5;
-      const beam = new THREE.Mesh(new THREE.BoxGeometry(p.width + 1.5, 0.2, 0.2), drsMat);
-      beam.position.y = 3;
-      gate.add(postL, postR, beam);
+      const out = p.width / 2 + BARRIER_OUT + 0.85;
+      for (const sx of [-1, 1] as const) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.22, 2.4, 0.22), drsMat);
+        post.position.set(sx * out, 1.2, 0);
+        const sign = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.55, 0.7), drsSignMat);
+        sign.position.set(sx * out, 2.15, 0);
+        gate.add(post, sign);
+      }
       gate.position.set(p.x, p.y, p.z);
       gate.rotation.y = yaw;
       root.add(gate);
@@ -472,19 +508,22 @@ export function createTrackMesh(
   }
   addScenery(root, pts, left, right, quality, night);
 
-  // Start/finish stripe — thin decal only (never a thick grey box on asphalt)
+  // Start/finish stripe — quiet chequered decal (never a glowing white ribbon)
   const sfMat = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    roughness: 0.75,
+    color: 0xc8c8d0,
+    roughness: 0.92,
+    metalness: 0.02,
     polygonOffset: true,
-    polygonOffsetFactor: -2,
-    polygonOffsetUnits: -2,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
     depthWrite: false,
+    transparent: true,
+    opacity: 0.85,
   });
-  const sf = new THREE.Mesh(new THREE.PlaneGeometry(pts[0].width * 0.92, 1.6), sfMat);
+  const sf = new THREE.Mesh(new THREE.PlaneGeometry(pts[0].width * 0.88, 1.15), sfMat);
   sf.rotation.x = -Math.PI / 2;
   const yaw0 = Math.atan2(pts[1].x - pts[0].x, pts[1].z - pts[0].z);
-  sf.position.set(pts[0].x, pts[0].y + 0.11, pts[0].z);
+  sf.position.set(pts[0].x, pts[0].y + 0.105, pts[0].z);
   sf.rotation.z = -yaw0;
   sf.renderOrder = 2;
   root.add(sf);
@@ -1097,6 +1136,33 @@ function offsetEdge(edge: THREE.Vector3[], side: number, dist: number): THREE.Ve
   return out;
 }
 
+/** True if a world XZ sample sits on (or inside) a foreign asphalt ribbon. */
+function pointOnForeignAsphalt(pts: TrackPoint[], x: number, z: number, selfI: number, margin = 0.6): boolean {
+  const n = pts.length;
+  if (n < 8) return false;
+  const total = pts[n - 1]?.s || 1;
+  const selfS = pts[Math.min(selfI, n - 1)].s;
+  for (let j = 0; j < n - 1; j += 2) {
+    let along = Math.abs(pts[j].s - selfS);
+    if (along > total * 0.5) along = total - along;
+    if (along < 55) continue;
+    const a = pts[j];
+    const b = pts[Math.min(j + 1, n - 1)];
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const len2 = dx * dx + dz * dz;
+    if (len2 < 1e-6) continue;
+    let t = ((x - a.x) * dx + (z - a.z) * dz) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const px = a.x + dx * t;
+    const pz = a.z + dz * t;
+    const dist = Math.hypot(x - px, z - pz);
+    const half = (a.width + (b.width - a.width) * t) * 0.5 + margin;
+    if (dist <= half) return true;
+  }
+  return false;
+}
+
 /** Tecpro-like soft walls — red/white foam stacks along asphalt edge */
 function addTecproBarriers(
   root: THREE.Group,
@@ -1110,7 +1176,8 @@ function addTecproBarriers(
   const n = Math.min(wallBase.length, pts.length);
   if (n < 2) return;
   const total = pts[pts.length - 1]?.s || 1;
-  const skipM = 14;
+  // Larger S/F gap — end-of-lap must stay free of jagged mid-asphalt walls
+  const skipM = 22;
 
   const positions: number[] = [];
   const normals: number[] = [];
@@ -1118,6 +1185,16 @@ function addTecproBarriers(
   const indices: number[] = [];
   let v = 0;
   let along = 0;
+
+  // Pre-smooth wall Y along the edge so fence stays level/continuous
+  const wallY = new Float32Array(n);
+  for (let i = 0; i < n; i++) wallY[i] = wallBase[i].y;
+  for (let pass = 0; pass < 2; pass++) {
+    const copy = wallY.slice();
+    for (let i = 1; i < n - 1; i++) {
+      wallY[i] = copy[i - 1] * 0.25 + copy[i] * 0.5 + copy[i + 1] * 0.25;
+    }
+  }
 
   for (let i = 0; i < n - 1; i++) {
     const s0 = pts[Math.min(i, pts.length - 1)].s;
@@ -1133,6 +1210,14 @@ function addTecproBarriers(
     }
     const a = wallBase[i];
     const b = wallBase[i + 1];
+    // Never place Tecpro ON driveable asphalt of another (or self-crossed) ribbon
+    if (
+      pointOnForeignAsphalt(pts, a.x, a.z, i, 0.35) ||
+      pointOnForeignAsphalt(pts, b.x, b.z, i + 1, 0.35)
+    ) {
+      along += Math.hypot(b.x - a.x, b.z - a.z);
+      continue;
+    }
     let dx = b.x - a.x;
     let dz = b.z - a.z;
     const seg = Math.hypot(dx, dz);
@@ -1142,14 +1227,16 @@ function addTecproBarriers(
     const nx = dz * side;
     const nz = -dx * side;
     // Slight outward offset so wall doesn't sit in asphalt
-    const ox = nx * 0.08;
-    const oz = nz * 0.08;
+    const ox = nx * 0.12;
+    const oz = nz * 0.12;
+    const ya = wallY[i];
+    const yb = wallY[i + 1];
     const u0 = along * 0.35;
     const u1 = (along + seg) * 0.35;
-    positions.push(a.x + ox, a.y, a.z + oz);
-    positions.push(a.x + ox, a.y + wallH, a.z + oz);
-    positions.push(b.x + ox, b.y, b.z + oz);
-    positions.push(b.x + ox, b.y + wallH, b.z + oz);
+    positions.push(a.x + ox, ya, a.z + oz);
+    positions.push(a.x + ox, ya + wallH, a.z + oz);
+    positions.push(b.x + ox, yb, b.z + oz);
+    positions.push(b.x + ox, yb + wallH, b.z + oz);
     for (let k = 0; k < 4; k++) normals.push(nx, 0, nz);
     uvs.push(u0, 0, u0, 1, u1, 0, u1, 1);
     if (side > 0) indices.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
@@ -1315,14 +1402,18 @@ function addEdgeLine(
   const outer = offsetEdge(edge, isLeft ? 1 : -1, 0.45);
   const left = isLeft ? outer : inner;
   const right = isLeft ? inner : outer;
-  const mat = new THREE.MeshBasicMaterial({ color: 0xe0e0e8 });
-  // Above asphalt; skip join to avoid S/F stack flicker
-  root.add(new THREE.Mesh(buildRibbonGeometrySkipJoinCoplanar(left, right, 0.105, pts, 14), mat));
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xd0d0d8,
+    roughness: 0.85,
+    metalness: 0.02,
+  });
+  // Above asphalt; skip join to avoid S/F stack flicker / white glow patches
+  root.add(new THREE.Mesh(buildRibbonGeometrySkipJoinCoplanar(left, right, 0.105, pts, 16), mat));
 }
 
 
 /** True if another centerline sample (far along S) sits nearly coplanar under/over this point. */
-function hasCoplanarForeignRibbon(pts: TrackPoint[], i: number, dyMax = 2.0): boolean {
+function hasCoplanarForeignRibbon(pts: TrackPoint[], i: number, dyMax = 2.2): boolean {
   const n = pts.length;
   if (n < 8) return false;
   const a = pts[Math.min(i, n - 1)];
@@ -1331,10 +1422,10 @@ function hasCoplanarForeignRibbon(pts: TrackPoint[], i: number, dyMax = 2.0): bo
     if (Math.abs(j - i) < 10) continue;
     let along = Math.abs(pts[j].s - a.s);
     if (along > total * 0.5) along = total - along;
-    if (along < 70) continue;
+    if (along < 60) continue;
     const dist = Math.hypot(a.x - pts[j].x, a.z - pts[j].z);
     // Include shoulder/kerb/Tecpro footprint, not just asphalt half-width
-    const half = (a.width + pts[j].width) * 0.5 + 2.4;
+    const half = (a.width + pts[j].width) * 0.5 + 3.2;
     if (dist > half) continue;
     if (Math.abs(a.y - pts[j].y) <= dyMax) return true;
   }
@@ -1796,25 +1887,36 @@ function addScenery(
   const lampGlowMat = makeSceneryMat(0xffe8a0, quality, undefined, 0xffcc66, lampEmissive);
 
   const detail = Math.max(4, quality.treeDetail);
+  const leafSeg = Math.max(5, detail);
+  const leafRing = Math.max(4, detail - 1);
 
-  // Shared unit geometries — scaled per instance
+  // Shared unit geometries — richer than lollipop cones / plain boxes, still tier-budgeted
   const unitBox = new THREE.BoxGeometry(1, 1, 1);
-  const trunkCyl = new THREE.CylinderGeometry(0.22, 0.32, 1, detail);
-  const palmTrunk = new THREE.CylinderGeometry(0.18, 0.28, 1, detail);
-  const coneLeaf = new THREE.ConeGeometry(1.5, 1, Math.max(5, detail));
-  const bushCrown = new THREE.SphereGeometry(1.15, Math.max(5, detail), Math.max(4, detail - 1));
-  const palmTop = new THREE.SphereGeometry(1.8, detail, Math.max(4, detail - 1));
+  const roofGeo = new THREE.ConeGeometry(0.72, 1, 4); // pitched hip roof (scale XZ/Y per instance)
+  const plinthGeo = new THREE.BoxGeometry(1.08, 0.18, 1.08);
+  const trunkCyl = new THREE.CylinderGeometry(0.2, 0.34, 1, detail);
+  const palmTrunk = new THREE.CylinderGeometry(0.16, 0.26, 1, detail);
+  // Multi-tier pine foliage (3 scaled cones per tree)
+  const coneLeaf = new THREE.ConeGeometry(1.35, 1, leafSeg);
+  // Deciduous: ellipsoidal crown clusters (not a single lollipop sphere)
+  const bushCrown = new THREE.SphereGeometry(1.05, leafSeg, leafRing);
+  const palmTop = new THREE.SphereGeometry(1.65, detail, leafRing);
+  // Palm frond discs (flattened spheres = cheap frond mass)
+  const palmFrond = new THREE.SphereGeometry(1.1, Math.max(5, detail - 1), 4);
   const poleGeo = new THREE.CylinderGeometry(0.08, 0.1, 1, 5);
   const glowGeo = new THREE.SphereGeometry(0.28, 6, 6);
 
   type Xform = { x: number; y: number; z: number; sx: number; sy: number; sz: number; rotY?: number; color?: number };
 
   const buildings: Xform[] = [];
+  const roofs: Xform[] = [];
+  const plinths: Xform[] = [];
   const trunks: Xform[] = [];
   const cones: Xform[] = [];
   const bushCrowns: Xform[] = [];
   const palmTrunks: Xform[] = [];
   const palmTops: Xform[] = [];
+  const palmFronds: Xform[] = [];
   const poles: Xform[] = [];
   const glows: Xform[] = [];
 
@@ -1848,6 +1950,8 @@ function addScenery(
       const extra = 2 + (i % 4) * 1.5;
       const placed = placeAlongEdgeNormal(pts, edge, i, side, halfToward, margin, extra);
       if (placed && acceptPropY(pts, placed.x, placed.z, placed.y)) {
+        const rotY = Math.atan2(placed.nx, placed.nz);
+        const col = bldgColors[i % bldgColors.length];
         buildings.push({
           x: placed.x,
           y: placed.y + h / 2,
@@ -1855,8 +1959,29 @@ function addScenery(
           sx: w,
           sy: h,
           sz: d,
-          rotY: Math.atan2(placed.nx, placed.nz),
-          color: bldgColors[i % bldgColors.length],
+          rotY,
+          color: col,
+        });
+        // Pitched roof + ground plinth — reads as architecture, not a plain box
+        roofs.push({
+          x: placed.x,
+          y: placed.y + h + 0.55,
+          z: placed.z,
+          sx: w * 0.78,
+          sy: 1.1 + (i % 3) * 0.15,
+          sz: d * 0.78,
+          rotY: rotY + Math.PI / 4,
+          color: 0x5a4030,
+        });
+        plinths.push({
+          x: placed.x,
+          y: placed.y + 0.1,
+          z: placed.z,
+          sx: w,
+          sy: 1,
+          sz: d,
+          rotY,
+          color: 0x6a6058,
         });
         bCount++;
       }
@@ -1874,31 +1999,66 @@ function addScenery(
         if (placed && acceptPropY(pts, placed.x, placed.z, placed.y)) {
           if (isPalm) {
             palmTrunks.push({
-              x: placed.x, y: placed.y + 2.25, z: placed.z,
-              sx: 1, sy: 4.5, sz: 1,
+              x: placed.x, y: placed.y + 2.4, z: placed.z,
+              sx: 1, sy: 4.8, sz: 1,
             });
             palmTops.push({
-              x: placed.x, y: placed.y + 5.2, z: placed.z,
-              sx: 1.2, sy: 0.55, sz: 1.2,
+              x: placed.x, y: placed.y + 5.35, z: placed.z,
+              sx: 0.85, sy: 0.45, sz: 0.85,
             });
+            // Cheap frond mass around crown
+            for (const [ox, oz, sc] of [
+              [0.55, 0.1, 1.0],
+              [-0.45, 0.35, 0.9],
+              [0.15, -0.55, 0.95],
+              [-0.25, -0.35, 0.85],
+            ] as const) {
+              palmFronds.push({
+                x: placed.x + ox,
+                y: placed.y + 5.05,
+                z: placed.z + oz,
+                sx: sc * 1.15,
+                sy: 0.22,
+                sz: sc * 1.15,
+                rotY: (i % 5) * 0.4,
+              });
+            }
           } else if (isBush) {
             trunks.push({
-              x: placed.x, y: placed.y + 0.7, z: placed.z,
-              sx: 0.75, sy: 1.35, sz: 0.75,
+              x: placed.x, y: placed.y + 0.85, z: placed.z,
+              sx: 0.7, sy: 1.55, sz: 0.7,
+            });
+            // 3-sphere deciduous crown (not a single lollipop)
+            const baseY = placed.y + 2.35;
+            bushCrowns.push({
+              x: placed.x, y: baseY, z: placed.z,
+              sx: 1.25 + (i % 3) * 0.12, sy: 1.0, sz: 1.25 + (i % 2) * 0.1,
             });
             bushCrowns.push({
-              x: placed.x, y: placed.y + 2.15, z: placed.z,
-              sx: 1.35 + (i % 3) * 0.15, sy: 1.05, sz: 1.35 + (i % 2) * 0.1,
+              x: placed.x + 0.55, y: baseY + 0.15, z: placed.z - 0.2,
+              sx: 0.85, sy: 0.75, sz: 0.9,
+            });
+            bushCrowns.push({
+              x: placed.x - 0.45, y: baseY + 0.25, z: placed.z + 0.35,
+              sx: 0.8, sy: 0.7, sz: 0.85,
             });
           } else {
+            // Tiered pine: trunk + 3 nested cones
             trunks.push({
-              x: placed.x, y: placed.y + 1.0, z: placed.z,
-              sx: 1, sy: 2.0, sz: 1,
+              x: placed.x, y: placed.y + 1.15, z: placed.z,
+              sx: 1, sy: 2.3, sz: 1,
             });
-            cones.push({
-              x: placed.x, y: placed.y + 3.2, z: placed.z,
-              sx: 1, sy: 3.2, sz: 1,
-            });
+            const tiers: [number, number, number][] = [
+              [placed.y + 2.55, 1.35, 1.7],
+              [placed.y + 3.55, 1.05, 1.55],
+              [placed.y + 4.45, 0.72, 1.35],
+            ];
+            for (const [cy, sx, sy] of tiers) {
+              cones.push({
+                x: placed.x, y: cy, z: placed.z,
+                sx, sy, sz: sx,
+              });
+            }
           }
           tCount++;
         }
@@ -1944,10 +2104,19 @@ function addScenery(
       if (!intersectsRoadRibbon(pts, hx, hz, 8, margin)) {
         const gy = terrainH(pts, hx, hz);
         if (!acceptPropY(pts, hx, hz, gy, 2.0)) continue;
+        const bw = 10 + (k % 3) * 2;
+        const bd = 8 + (k % 2) * 3;
+        const bcol = bldgColors[(c + k) % bldgColors.length];
         buildings.push({
           x: hx, y: gy + hh / 2, z: hz,
-          sx: 10 + (k % 3) * 2, sy: hh, sz: 8 + (k % 2) * 3,
-          color: bldgColors[(c + k) % bldgColors.length],
+          sx: bw, sy: hh, sz: bd,
+          color: bcol,
+        });
+        roofs.push({
+          x: hx, y: gy + hh + 0.7, z: hz,
+          sx: bw * 0.75, sy: 1.4, sz: bd * 0.75,
+          rotY: Math.PI / 4,
+          color: 0x4a3828,
         });
       }
     }
@@ -2088,12 +2257,17 @@ function addScenery(
   const bldgInstMat = bldgMat.clone();
   (bldgInstMat as THREE.MeshLambertMaterial).vertexColors = false;
   addInstanced(unitBox, bldgInstMat, buildings, true);
+  const roofMat = makeSceneryMat(0x5a4030, quality);
+  const plinthMat = makeSceneryMat(0x6a6058, quality);
+  addInstanced(roofGeo, roofMat, roofs, true);
+  addInstanced(plinthGeo, plinthMat, plinths, true);
 
   addInstanced(trunkCyl, treeTrunkMat, trunks, false);
   addInstanced(coneLeaf, treeLeafMat, cones, false);
   addInstanced(bushCrown, treeLeafMat, bushCrowns, false);
   addInstanced(palmTrunk, treeTrunkMat, palmTrunks, false);
   addInstanced(palmTop, palmLeafMat, palmTops, false);
+  addInstanced(palmFrond, palmLeafMat, palmFronds, false);
   addInstanced(poleGeo, lampMat, poles, false);
   addInstanced(glowGeo, lampGlowMat, glows, false);
 

@@ -17,7 +17,7 @@ import {
   applyGraphicsTier,
 } from '../render/SceneSetup';
 import { createTrackMesh } from '../render/TrackMesh';
-import { createCarMesh, setDrsVisual } from '../render/CarMesh';
+import { createCarMesh, setDrsVisual, updateCarWheels } from '../render/CarMesh';
 import { PostFX } from '../render/PostFX';
 import { CameraController } from '../render/CameraController';
 import {
@@ -85,6 +85,7 @@ export class Game {
   private clock = new THREE.Clock();
   private running = false;
   private showRacingLine = false;
+  private lastFrameDt = 0.016;
 
   // FPS counter (no per-frame allocs)
   private fpsFrames = 0;
@@ -240,11 +241,9 @@ export class Game {
     this.trackRoot = createTrackMesh(this.track, this.graphics.tier, this.graphics.night);
     this.scene.add(this.trackRoot);
 
+    // Racing-line assist is HUD-only — no in-world spheres / gizmos (they read as debug junk).
     this.showRacingLine =
       settings.difficulty === 'rookie' || settings.mode === 'tutorial';
-    if (this.showRacingLine) {
-      this.addRacingLineMarkers();
-    }
 
     const livery = this.resolveLivery(settings);
     const castShadow = qp.carCastShadow || qp.sceneryCastShadow;
@@ -307,26 +306,6 @@ export class Game {
     this.cameraCtrl.update(this.vehicle, 0.016);
   }
 
-  private addRacingLineMarkers(): void {
-    if (!this.trackRoot) return;
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0x00d2be,
-      transparent: true,
-      opacity: 0.55,
-      depthWrite: false,
-    });
-    const geo = new THREE.SphereGeometry(0.32, 6, 6);
-    const group = new THREE.Group();
-    group.name = 'racingLine';
-    for (let s = 0; s < this.track.length; s += 14) {
-      const p = sampleTrack(this.track.points, s);
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(p.x, p.y + 0.15, p.z);
-      group.add(m);
-    }
-    this.trackRoot.add(group);
-  }
-
   private showCountdownLights(on: number, go: boolean): void {
     this.countdownEl.classList.remove('hidden');
     const lights = [0, 1, 2, 3, 4]
@@ -358,6 +337,7 @@ export class Game {
     if (!this.running) return;
     requestAnimationFrame(this.loop);
     const dt = Math.min(0.05, this.clock.getDelta());
+    this.lastFrameDt = dt;
 
     this.fpsFrames++;
     this.fpsAccum += dt;
@@ -407,8 +387,9 @@ export class Game {
       ai.mesh.position.set(v.x, v.y, v.z);
       ai.mesh.rotation.order = 'YXZ';
       ai.mesh.rotation.y = v.yaw;
-      ai.mesh.rotation.z = -v.angularVel * 0.12;
+      ai.mesh.rotation.z = 0;
       ai.mesh.rotation.x = v.pitch;
+      updateCarWheels(ai.mesh, v.steerAngle, v.speed, this.lastFrameDt);
     }
   }
 
@@ -646,9 +627,12 @@ export class Game {
     if (!this.carMesh || !this.vehicle) return;
     this.carMesh.position.set(this.vehicle.x, this.vehicle.y, this.vehicle.z);
     this.carMesh.rotation.order = 'YXZ';
+    // Chassis follows path yaw/pitch only — no body lean/twist from steer input.
+    // Front wheels yaw via updateCarWheels(steerAngle).
     this.carMesh.rotation.y = this.vehicle.yaw;
-    this.carMesh.rotation.z = -this.vehicle.angularVel * 0.15;
-    this.carMesh.rotation.x = this.vehicle.pitch - this.vehicle.speed * 0.002;
+    this.carMesh.rotation.z = 0;
+    this.carMesh.rotation.x = this.vehicle.pitch;
+    updateCarWheels(this.carMesh, this.vehicle.steerAngle, this.vehicle.speed, this.lastFrameDt);
     updateSunFollow(this.scene, this.vehicle.x, this.vehicle.z);
   }
 }

@@ -654,46 +654,80 @@ export function createCarMesh(livery: Livery, opts?: CarMeshOptions): THREE.Grou
     place(g, mesh(geos.upright, carbon, 'carbon'), rwx * 0.95, wheelY, rWheelZ);
   }
 
-  // ═══ WHEELS (tire, rim, spokes, disc, caliper, hub) ════════════════
-  // Spoke box is (0.035, 0.018, 0.2) — length along local Z.
-  // Wheel axis = world X; spokes radiate in the YZ plane.
-  const places: [number, number, number][] = [
-    [-0.86, wheelY, fWheelZ],
-    [0.86, wheelY, fWheelZ],
-    [-0.9, wheelY, rWheelZ],
-    [0.9, wheelY, rWheelZ],
+  // ═══ WHEELS (pivoted: front yaw = steer, all spin with speed) ═══════
+  // Hierarchy: car → wheelPivot (steer yaw Y) → spinner (roll X) → tire/rim/spokes
+  // Disc/caliper stay on pivot (non-spinning). Brake duct on chassis side of pivot.
+  const places: { name: string; wx: number; wy: number; wz: number; front: boolean }[] = [
+    { name: 'wheelFL', wx: -0.86, wy: wheelY, wz: fWheelZ, front: true },
+    { name: 'wheelFR', wx: 0.86, wy: wheelY, wz: fWheelZ, front: true },
+    { name: 'wheelRL', wx: -0.9, wy: wheelY, wz: rWheelZ, front: false },
+    { name: 'wheelRR', wx: 0.9, wy: wheelY, wz: rWheelZ, front: false },
   ];
   const SPOKE_COUNT = 5;
-  for (const [wx, wy, wz] of places) {
-    place(g, mesh(geos.tire, rubber, 'none'), wx, wy, wz, 0, 0, Math.PI / 2);
-    // Sidewall groove rings (visual tire detail)
-    const groove = mesh(geos.tireGroove, rubber, 'none');
-    groove.position.set(wx, wy, wz);
-    groove.rotation.y = Math.PI / 2;
-    g.add(groove);
+  const wheelPivots: THREE.Group[] = [];
+  const wheelSpinners: THREE.Group[] = [];
+  for (const { name, wx, wy, wz, front } of places) {
+    const pivot = new THREE.Group();
+    pivot.name = name;
+    pivot.position.set(wx, wy, wz);
+    pivot.userData.front = front;
+    g.add(pivot);
 
-    // Rim lips in the wheel plane (YZ); nudge outward past tire sidewall
+    const spinner = new THREE.Group();
+    spinner.name = name + 'Spin';
+    pivot.add(spinner);
+
+    // Tire / groove / rim / spokes live on spinner (roll with speed)
+    const tire = mesh(geos.tire, rubber, 'none');
+    tire.rotation.z = Math.PI / 2;
+    spinner.add(tire);
+    const groove = mesh(geos.tireGroove, rubber, 'none');
+    groove.rotation.y = Math.PI / 2;
+    spinner.add(groove);
+
     const out = Math.sign(wx) * 0.12;
-    place(g, mesh(geos.rim, rimMat, 'none'), wx + out * 0.6, wy, wz, 0, Math.PI / 2, 0);
-    place(g, mesh(geos.rimInner, carbon, 'carbon'), wx + out * 0.4, wy, wz, 0, Math.PI / 2, 0);
-    place(g, mesh(geos.hub, rimMat, 'none'), wx + out, wy, wz, 0, 0, Math.PI / 2);
-    place(g, mesh(geos.hubNut, rimMat, 'none'), wx + out * 1.5, wy, wz, 0, 0, Math.PI / 2);
-    // Brake disc inset toward chassis
-    place(g, mesh(geos.disc, discMat, 'none'), wx * 0.88, wy, wz, 0, 0, Math.PI / 2);
-    // Caliper hint (top of disc, team-accent color)
-    place(g, mesh(geos.caliper, caliperMat, 'accent'), wx * 0.86, wy + 0.13, wz);
-    // Brake duct facing forward
-    place(g, mesh(geos.brakeDuct, carbon, 'carbon'), wx * 0.78, wy + 0.02, wz + 0.08, Math.PI / 2, 0, 0);
+    const rim = mesh(geos.rim, rimMat, 'none');
+    rim.position.set(out * 0.6, 0, 0);
+    rim.rotation.y = Math.PI / 2;
+    spinner.add(rim);
+    const rimIn = mesh(geos.rimInner, carbon, 'carbon');
+    rimIn.position.set(out * 0.4, 0, 0);
+    rimIn.rotation.y = Math.PI / 2;
+    spinner.add(rimIn);
+    const hub = mesh(geos.hub, rimMat, 'none');
+    hub.position.set(out, 0, 0);
+    hub.rotation.z = Math.PI / 2;
+    spinner.add(hub);
+    const hubNut = mesh(geos.hubNut, rimMat, 'none');
+    hubNut.position.set(out * 1.5, 0, 0);
+    hubNut.rotation.z = Math.PI / 2;
+    spinner.add(hubNut);
 
     for (let s = 0; s < SPOKE_COUNT; s++) {
       const ang = (s / SPOKE_COUNT) * Math.PI * 2;
       const sp = mesh(geos.spoke, rimMat, 'none');
-      // Center near outer hub face; rotate so local +Z points radially in YZ
-      sp.position.set(wx + out, wy, wz);
+      sp.position.set(out, 0, 0);
       sp.rotation.set(ang, 0, 0);
-      g.add(sp);
+      spinner.add(sp);
     }
+
+    // Disc + caliper on pivot (steer with front, do not spin)
+    const disc = mesh(geos.disc, discMat, 'none');
+    disc.position.set(wx * 0.88 - wx, 0, 0); // toward chassis in local X
+    disc.rotation.z = Math.PI / 2;
+    pivot.add(disc);
+    const cal = mesh(geos.caliper, caliperMat, 'accent');
+    cal.position.set(wx * 0.86 - wx, 0.13, 0);
+    pivot.add(cal);
+    // Brake duct facing forward — parented to car (not steered) for stability
+    place(g, mesh(geos.brakeDuct, carbon, 'carbon'), wx * 0.78, wy + 0.02, wz + 0.08, Math.PI / 2, 0, 0);
+
+    wheelPivots.push(pivot);
+    wheelSpinners.push(spinner);
   }
+  g.userData.wheelPivots = wheelPivots;
+  g.userData.wheelSpinners = wheelSpinners;
+  g.userData.wheelSpin = 0;
 
   // ═══ NUMBER / LIVERY PANELS ════════════════════════════════════════
   const racingNum = numberFromLivery(livery, opts?.racingNumber);
@@ -787,5 +821,37 @@ export function setDrsVisual(car: THREE.Group, open: boolean): void {
   const flap = car.getObjectByName('rearWingFlap');
   if (flap) {
     flap.rotation.x = open ? -0.4 : 0;
+  }
+}
+
+const WHEEL_RADIUS = 0.33;
+
+/**
+ * Visual steering: yaw FRONT wheel pivots with steer angle (rad).
+ * Chassis body yaw follows the path via Game.syncCarMesh — do NOT lean/twist
+ * the body from steer input; wheels show the lock instead.
+ * All wheels spin with longitudinal speed.
+ */
+export function updateCarWheels(
+  car: THREE.Group,
+  steerAngle: number,
+  speed: number,
+  dt: number,
+): void {
+  const pivots = car.userData.wheelPivots as THREE.Group[] | undefined;
+  const spinners = car.userData.wheelSpinners as THREE.Group[] | undefined;
+  if (!pivots || !spinners) return;
+
+  const steer = Math.max(-0.85, Math.min(0.85, steerAngle));
+  for (const p of pivots) {
+    if (p.userData.front) p.rotation.y = steer;
+    else p.rotation.y = 0;
+  }
+
+  const spin = (car.userData.wheelSpin as number) || 0;
+  const next = spin + (speed / WHEEL_RADIUS) * dt;
+  car.userData.wheelSpin = next;
+  for (const s of spinners) {
+    s.rotation.x = next;
   }
 }
