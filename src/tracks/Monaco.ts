@@ -75,11 +75,14 @@ const RAW: { x: number; z: number; y?: number; width?: number }[] = [
   { x: -5, z: -50, y: 0.4, width: 8 },
   { x: 25, z: -62, y: 0.25, width: 8 },
   { x: 48, z: -58, y: 0.15, width: 9 },
-  // Anthony Noghes — clear continuous right into S/F (+Z), no ribbon fold
-  { x: 58, z: -40, y: 0.08, width: 10 },
-  { x: 50, z: -22, y: 0.04, width: 11 },
-  { x: 43, z: -10, y: 0.02, width: 12 },
-  { x: 40, z: -4, y: 0, width: 12 },
+  // Anthony Noghes — gentle continuous right into S/F (+Z). Extra samples keep
+  // mitered edges / kerbs / shoulders from folding into each other at the join.
+  { x: 55, z: -48, y: 0.1, width: 9 },
+  { x: 60, z: -32, y: 0.07, width: 10 },
+  { x: 56, z: -18, y: 0.05, width: 11 },
+  { x: 50, z: -10, y: 0.03, width: 11.5 },
+  { x: 45, z: -5, y: 0.015, width: 12 },
+  { x: 42, z: -2, y: 0.005, width: 12 },
   { x: 40, z: 0, y: 0, width: 12 }, // close loop — tangent matches S/F (+Z)
 ].map((p) => ({ ...p, width: (p.width ?? 10) * ROAD_WIDTH_SCALE }));
 

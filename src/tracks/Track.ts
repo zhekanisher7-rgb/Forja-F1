@@ -463,10 +463,13 @@ export function sampleTerrainHeight(pts: TrackPoint[], x: number, z: number): nu
     trackGroundY = minNearbyY;
   }
 
-  // Soft blend from track shoulder into surrounding terrain
+  // Soft blend from track shoulder into surrounding terrain.
+  // On-asphalt (clearance < 0): sink well below ribbon so S/F / Noghes never z-fight.
+  const underAsphalt = bestClear < 0.35;
+  const sink = underAsphalt ? 0.14 : 0.08;
   const edge = Math.max(0, bestClear);
   const u = Math.min(1, edge / corridor);
   const s = u * u * (3 - 2 * u);
-  const nearY = trackGroundY - 0.06;
+  const nearY = trackGroundY - sink;
   return nearY * (1 - s) + base * s;
 }

@@ -41,6 +41,10 @@ export interface QualityProfile {
   tunnelPointLights: boolean;
   /** Merge track dash markings into fewer meshes */
   markingStep: number;
+  /** Extra landscape props (rocks, banners, flower beds) */
+  maxDecor: number;
+  /** Distant hillside / landmark clusters */
+  hillsideClusters: number;
 }
 
 const PROFILES: Record<GraphicsTier, QualityProfile> = {
@@ -67,6 +71,8 @@ const PROFILES: Record<GraphicsTier, QualityProfile> = {
     aiUpdateHz: 20,
     tunnelPointLights: false,
     markingStep: 28,
+    maxDecor: 8,
+    hillsideClusters: 2,
   },
   low: {
     pixelRatioCap: 1,
@@ -90,6 +96,8 @@ const PROFILES: Record<GraphicsTier, QualityProfile> = {
     aiUpdateHz: 24,
     tunnelPointLights: false,
     markingStep: 22,
+    maxDecor: 14,
+    hillsideClusters: 3,
   },
   medium: {
     pixelRatioCap: 1,
@@ -102,17 +110,19 @@ const PROFILES: Record<GraphicsTier, QualityProfile> = {
     sceneryCastShadow: false,
     asphaltCastShadow: false,
     treeDetail: 5,
-    fogNear: 70,
-    fogFar: 360,
+    fogNear: 75,
+    fogFar: 380,
     anisotropy: 2,
     useLambertScenery: true,
     sceneryMargin: 3.5,
-    maxBuildings: 40,
-    maxTrees: 55,
-    maxLamps: 30,
+    maxBuildings: 48,
+    maxTrees: 64,
+    maxLamps: 34,
     aiUpdateHz: 30,
     tunnelPointLights: false,
     markingStep: 16,
+    maxDecor: 22,
+    hillsideClusters: 5,
   },
   high: {
     pixelRatioCap: 1.25,
@@ -130,12 +140,14 @@ const PROFILES: Record<GraphicsTier, QualityProfile> = {
     anisotropy: 4,
     useLambertScenery: false,
     sceneryMargin: 3.0,
-    maxBuildings: 55,
-    maxTrees: 70,
-    maxLamps: 40,
+    maxBuildings: 68,
+    maxTrees: 85,
+    maxLamps: 48,
     aiUpdateHz: 40,
     tunnelPointLights: false,
-    markingStep: 14,
+    markingStep: 12,
+    maxDecor: 36,
+    hillsideClusters: 7,
   },
 };
 

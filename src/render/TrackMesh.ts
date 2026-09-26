@@ -76,14 +76,95 @@ function makeKerbTexture(): THREE.CanvasTexture {
   return tex;
 }
 
+/** Red/white Tecpro-style soft-wall stack (horizontal bands) */
+function makeTecproTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 128;
+  const ctx = c.getContext('2d')!;
+  const bands = 6;
+  const bh = 128 / bands;
+  for (let i = 0; i < bands; i++) {
+    const red = i % 2 === 0;
+    ctx.fillStyle = red ? '#d01818' : '#f4f4f8';
+    ctx.fillRect(0, i * bh, 64, bh);
+    // foam bevel
+    ctx.fillStyle = red ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.05)';
+    ctx.fillRect(0, i * bh, 64, 4);
+    ctx.fillStyle = red ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.1)';
+    ctx.fillRect(0, i * bh + bh - 5, 64, 5);
+  }
+  // vertical seam marks
+  ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(32, 0);
+  ctx.lineTo(32, 128);
+  ctx.stroke();
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+const SPONSOR_NAMES = ['FORJA', 'TEC', 'HYDRO', 'NEXUS', 'VOLT', 'AERO', 'PULSE', 'GRID'];
+const SPONSOR_COLORS = [
+  ['#0a1a3a', '#e8c040'],
+  ['#1a1a1e', '#e02020'],
+  ['#0a4060', '#40d0e8'],
+  ['#2a1040', '#c060ff'],
+  ['#102010', '#40e080'],
+  ['#301808', '#f08030'],
+  ['#101828', '#60a0ff'],
+  ['#280808', '#f0e0c0'],
+];
+
+/** Single fictional sponsor board atlas (one panel per name) */
+function makeSponsorAtlas(): THREE.CanvasTexture {
+  const cellW = 256;
+  const cellH = 64;
+  const n = SPONSOR_NAMES.length;
+  const c = document.createElement('canvas');
+  c.width = cellW;
+  c.height = cellH * n;
+  const ctx = c.getContext('2d')!;
+  for (let i = 0; i < n; i++) {
+    const [bg, fg] = SPONSOR_COLORS[i];
+    const y0 = i * cellH;
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, y0, cellW, cellH);
+    // border frame
+    ctx.strokeStyle = fg;
+    ctx.lineWidth = 4;
+    ctx.strokeRect(6, y0 + 6, cellW - 12, cellH - 12);
+    // accent bar
+    ctx.fillStyle = fg;
+    ctx.fillRect(10, y0 + cellH - 14, cellW - 20, 4);
+    ctx.fillStyle = fg;
+    ctx.font = 'bold 28px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(SPONSOR_NAMES[i], cellW / 2, y0 + cellH / 2 - 2);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  return tex;
+}
+
 /** Facade with window grid — shared by all buildings (1 draw call via InstancedMesh) */
 function makeBuildingFacadeTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 128;
   c.height = 256;
   const ctx = c.getContext('2d')!;
-  ctx.fillStyle = '#9a9088';
+  // Warm Mediterranean plaster
+  ctx.fillStyle = '#a89888';
   ctx.fillRect(0, 0, 128, 256);
+  // Shutters / balcony hint band
+  ctx.fillStyle = '#6a5040';
+  ctx.fillRect(0, 120, 128, 6);
   // subtle plaster noise
   for (let i = 0; i < 800; i++) {
     const v = 140 + Math.random() * 40;
@@ -120,12 +201,31 @@ function makeGroundTexture(): THREE.CanvasTexture {
   c.width = 256;
   c.height = 256;
   const ctx = c.getContext('2d')!;
+  // Base meadow
   ctx.fillStyle = '#3a5236';
   ctx.fillRect(0, 0, 256, 256);
-  for (let i = 0; i < 6000; i++) {
+  for (let i = 0; i < 5000; i++) {
     const g = 40 + Math.random() * 50;
     ctx.fillStyle = `rgba(${g * 0.55},${g},${g * 0.4},${0.1 + Math.random() * 0.15})`;
     ctx.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+  }
+  // Dirt / dry patches
+  for (let i = 0; i < 18; i++) {
+    const cx = Math.random() * 256;
+    const cy = Math.random() * 256;
+    const r = 8 + Math.random() * 22;
+    const grd = ctx.createRadialGradient(cx, cy, 1, cx, cy, r);
+    grd.addColorStop(0, 'rgba(110,90,55,0.45)');
+    grd.addColorStop(1, 'rgba(110,90,55,0)');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Rock flecks
+  for (let i = 0; i < 80; i++) {
+    ctx.fillStyle = `rgba(${90 + Math.random() * 40},${85 + Math.random() * 30},${70 + Math.random() * 20},0.35)`;
+    ctx.fillRect(Math.random() * 256, Math.random() * 256, 2 + Math.random() * 3, 1 + Math.random() * 2);
   }
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -158,13 +258,14 @@ export function createTrackMesh(
     roughness: 0.92,
     metalness: 0.04,
   });
-  const asphalt = new THREE.Mesh(buildRibbonGeometry(left, right, 0.045), asphaltMat);
+  // Asphalt clearly above terrain/shoulders (0.055) — prevents Noghes/S-F z-fight
+  const asphalt = new THREE.Mesh(buildRibbonGeometry(left, right, 0.055), asphaltMat);
   asphalt.receiveShadow = true;
   asphalt.castShadow = quality.asphaltCastShadow;
   root.add(asphalt);
 
   // Soft edge darken blend (slightly wider, transparent) — hides hard rectangle seams
-  addSoftEdgeBlend(root, left, right);
+  addSoftEdgeBlend(root, left, right, pts);
 
   // Center racing line — raised, no polygonOffset flicker
   const { left: ll, right: rr } = getTrackEdges(pts, 0.12);
@@ -174,14 +275,16 @@ export function createTrackMesh(
     opacity: 0.4,
     depthWrite: false,
   });
-  root.add(new THREE.Mesh(buildRibbonGeometry(ll, rr, 0.055), lineMat));
+  root.add(new THREE.Mesh(buildRibbonGeometry(ll, rr, 0.062), lineMat));
 
-  addEdgeLine(root, left, true);
-  addEdgeLine(root, right, false);
-  addKerbs(root, left, true, quality);
-  addKerbs(root, right, false, quality);
-  addWallRibbon(root, left, -1, quality);
-  addWallRibbon(root, right, 1, quality);
+  addEdgeLine(root, left, true, pts);
+  addEdgeLine(root, right, false, pts);
+  addKerbs(root, left, true, quality, pts);
+  addKerbs(root, right, false, quality, pts);
+  addTecproBarriers(root, left, -1, quality, pts);
+  addTecproBarriers(root, right, 1, quality, pts);
+  addSponsorBoards(root, left, -1, quality, pts);
+  addSponsorBoards(root, right, 1, quality, pts);
   addTrackMarkings(root, pts, quality);
 
   const gravelMat = new THREE.MeshStandardMaterial({ color: 0xb8a078, metalness: 0.08, roughness: 1 });
@@ -241,7 +344,7 @@ export function createTrackMesh(
   const sf = new THREE.Mesh(new THREE.PlaneGeometry(pts[0].width * 0.92, 1.6), sfMat);
   sf.rotation.x = -Math.PI / 2;
   const yaw0 = Math.atan2(pts[1].x - pts[0].x, pts[1].z - pts[0].z);
-  sf.position.set(pts[0].x, pts[0].y + 0.055, pts[0].z);
+  sf.position.set(pts[0].x, pts[0].y + 0.072, pts[0].z);
   sf.rotation.z = -yaw0;
   sf.renderOrder = 2;
   root.add(sf);
@@ -394,6 +497,7 @@ function addSoftEdgeBlend(
   root: THREE.Group,
   left: THREE.Vector3[],
   right: THREE.Vector3[],
+  pts: TrackPoint[],
 ): void {
   const outerL = offsetEdge(left, -1, 0.55);
   const outerR = offsetEdge(right, 1, 0.55);
@@ -404,12 +508,17 @@ function addSoftEdgeBlend(
     depthWrite: false,
     side: THREE.DoubleSide,
   });
-  // Left shoulder soft band
-  const leftBand = new THREE.Mesh(buildRibbonGeometry(outerL, left, 0.038), mat);
+  // Sit just under asphalt top (0.055) — never coplanar with kerbs at Noghes/S/F
+  const leftBand = new THREE.Mesh(
+    buildRibbonGeometrySkipJoin(outerL, left, 0.048, pts, 18),
+    mat,
+  );
   leftBand.renderOrder = 1;
   root.add(leftBand);
-  // Right shoulder soft band
-  const rightBand = new THREE.Mesh(buildRibbonGeometry(right, outerR, 0.038), mat.clone());
+  const rightBand = new THREE.Mesh(
+    buildRibbonGeometrySkipJoin(right, outerR, 0.048, pts, 18),
+    mat.clone(),
+  );
   rightBand.renderOrder = 1;
   root.add(rightBand);
 }
@@ -431,21 +540,24 @@ function addShoulderStrips(
 
   for (const [edge, side] of [[left, -1], [right, 1]] as const) {
     // Concrete runoff immediately outside asphalt (~0.2–2.4 m)
+    // Y well below asphalt (0.055) so Noghes/S/F join stays clean
     const cInner = offsetEdge(edge, side, 0.15);
     const cOuter = offsetEdge(edge, side, 2.4);
     const cL = side < 0 ? cOuter : cInner;
     const cR = side < 0 ? cInner : cOuter;
-    const concrete = new THREE.Mesh(buildRibbonGeometry(cL, cR, 0.012), concreteMat);
+    const concrete = new THREE.Mesh(
+      buildRibbonGeometrySkipJoin(cL, cR, 0.018, pts, 22),
+      concreteMat,
+    );
     concrete.receiveShadow = true;
     root.add(concrete);
 
     // Grass strip farther out (~2.2–8 m) — fills gaps under buildings/trees
     const gInner = offsetEdge(edge, side, 2.2);
     const gOuter = offsetEdge(edge, side, 8.5);
-    // Snap grass strip Y toward terrain so it meets the heightfield
     const gL = side < 0 ? gOuter : gInner;
     const gR = side < 0 ? gInner : gOuter;
-    const grassGeo = buildRibbonGeometryTerrain(gL, gR, pts, 0.02);
+    const grassGeo = buildRibbonGeometryTerrain(gL, gR, pts, 0.015);
     const grass = new THREE.Mesh(grassGeo, grassMat);
     grass.receiveShadow = true;
     root.add(grass);
@@ -672,9 +784,9 @@ function boxClearsRibbon(
 function addHarbor(root: THREE.Group, pts: TrackPoint[], quality: QualityProfile): void {
   // Cheap water — Basic + slight transparency (no expensive specular shader)
   const waterMat = new THREE.MeshBasicMaterial({
-    color: 0x1a6a8a,
+    color: 0x1a7a9a,
     transparent: true,
-    opacity: 0.88,
+    opacity: 0.9,
   });
   const water = new THREE.Mesh(new THREE.PlaneGeometry(280, 180), waterMat);
   water.rotation.x = -Math.PI / 2;
@@ -701,7 +813,6 @@ function addHarbor(root: THREE.Group, pts: TrackPoint[], quality: QualityProfile
     root.add(mesh);
   }
 
-  // 2 boats only (was 4) — less clutter / draw calls
   const hullMat = quality.useLambertScenery
     ? new THREE.MeshLambertMaterial({ color: 0xf0f2f5 })
     : new THREE.MeshStandardMaterial({ color: 0xf0f2f5, roughness: 0.4, metalness: 0.3 });
@@ -709,10 +820,15 @@ function addHarbor(root: THREE.Group, pts: TrackPoint[], quality: QualityProfile
     ? new THREE.MeshLambertMaterial({ color: 0x2a4060 })
     : new THREE.MeshStandardMaterial({ color: 0x2a4060, roughness: 0.35, metalness: 0.4 });
   const boats: [number, number, number][] = [
-    // On water south of chicane / quay — must clear asphalt ribbon
     [200, -120, 0.4],
     [255, -110, -0.6],
   ];
+  if (quality.maxDecor >= 14) {
+    boats.push([175, -135, 1.1], [280, -95, -0.2]);
+  }
+  if (quality.maxDecor >= 30) {
+    boats.push([230, -145, 0.7]);
+  }
   for (const [bx, bz, rot] of boats) {
     const hull = new THREE.Mesh(new THREE.BoxGeometry(14, 2.2, 4), hullMat);
     hull.position.set(bx, 0.6, bz);
@@ -769,6 +885,51 @@ function buildRibbonGeometry(
   return geo;
 }
 
+/**
+ * Like buildRibbonGeometry but omits quads within `skipM` meters of the loop join
+ * (S/F / Noghes). Prevents coplanar kerb/shoulder/terrain stacks at the seam.
+ */
+function buildRibbonGeometrySkipJoin(
+  left: THREE.Vector3[],
+  right: THREE.Vector3[],
+  yLift: number,
+  pts: TrackPoint[],
+  skipM: number,
+): THREE.BufferGeometry {
+  const n = Math.min(left.length, right.length, pts.length);
+  const total = pts[pts.length - 1]?.s || 1;
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  for (let i = 0; i < n; i++) {
+    positions.push(left[i].x, left[i].y + yLift, left[i].z);
+    positions.push(right[i].x, right[i].y + yLift, right[i].z);
+    normals.push(0, 1, 0, 0, 1, 0);
+    uvs.push(0, i / Math.max(n - 1, 1), 1, i / Math.max(n - 1, 1));
+  }
+  const nearJoin = (i: number): boolean => {
+    const s = pts[Math.min(i, pts.length - 1)].s;
+    return s < skipM || s > total - skipM;
+  };
+  for (let i = 0; i < n - 1; i++) {
+    if (nearJoin(i) || nearJoin(i + 1)) continue;
+    const lx = left[i + 1].x - left[i].x;
+    const lz = left[i + 1].z - left[i].z;
+    const rx = right[i + 1].x - right[i].x;
+    const rz = right[i + 1].z - right[i].z;
+    if (Math.hypot(lx, lz) < 1e-4 && Math.hypot(rx, rz) < 1e-4) continue;
+    const a = i * 2;
+    indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  return geo;
+}
+
 function offsetEdge(edge: THREE.Vector3[], side: number, dist: number): THREE.Vector3[] {
   const out: THREE.Vector3[] = [];
   const n = edge.length;
@@ -795,47 +956,62 @@ function offsetEdge(edge: THREE.Vector3[], side: number, dist: number): THREE.Ve
   return out;
 }
 
-function addWallRibbon(
+/** Tecpro-like soft walls — red/white foam stacks along asphalt edge */
+function addTecproBarriers(
   root: THREE.Group,
   edge: THREE.Vector3[],
   side: number,
   quality: QualityProfile,
+  pts: TrackPoint[],
 ): void {
-  const wallBase = offsetEdge(edge, side, 0.9);
-  const wallH = 1.25;
-  const n = wallBase.length;
+  const wallBase = offsetEdge(edge, side, 0.95);
+  const wallH = 1.15;
+  const n = Math.min(wallBase.length, pts.length);
   if (n < 2) return;
+  const total = pts[pts.length - 1]?.s || 1;
+  const skipM = 14;
 
   const positions: number[] = [];
   const normals: number[] = [];
   const uvs: number[] = [];
   const indices: number[] = [];
+  let v = 0;
+  let along = 0;
 
-  for (let i = 0; i < n; i++) {
-    const iPrev = i === 0 ? n - 2 : i - 1;
-    const iNext = i === n - 1 ? 1 : i + 1;
-    let dx = wallBase[iNext].x - wallBase[iPrev].x;
-    let dz = wallBase[iNext].z - wallBase[iPrev].z;
-    const len = Math.hypot(dx, dz) || 1;
-    dx /= len;
-    dz /= len;
+  for (let i = 0; i < n - 1; i++) {
+    const s0 = pts[Math.min(i, pts.length - 1)].s;
+    const s1 = pts[Math.min(i + 1, pts.length - 1)].s;
+    if (s0 < skipM || s0 > total - skipM || s1 < skipM || s1 > total - skipM) {
+      along += Math.hypot(wallBase[i + 1].x - wallBase[i].x, wallBase[i + 1].z - wallBase[i].z);
+      continue;
+    }
+    const a = wallBase[i];
+    const b = wallBase[i + 1];
+    let dx = b.x - a.x;
+    let dz = b.z - a.z;
+    const seg = Math.hypot(dx, dz);
+    if (seg < 1e-4) continue;
+    dx /= seg;
+    dz /= seg;
     const nx = dz * side;
     const nz = -dx * side;
-    const by = wallBase[i].y;
-
-    positions.push(wallBase[i].x, by, wallBase[i].z);
-    positions.push(wallBase[i].x, by + wallH, wallBase[i].z);
-    normals.push(nx, 0, nz, nx, 0, nz);
-    uvs.push(i / Math.max(n - 1, 1), 0, i / Math.max(n - 1, 1), 1);
+    // Slight outward offset so wall doesn't sit in asphalt
+    const ox = nx * 0.08;
+    const oz = nz * 0.08;
+    const u0 = along * 0.35;
+    const u1 = (along + seg) * 0.35;
+    positions.push(a.x + ox, a.y, a.z + oz);
+    positions.push(a.x + ox, a.y + wallH, a.z + oz);
+    positions.push(b.x + ox, b.y, b.z + oz);
+    positions.push(b.x + ox, b.y + wallH, b.z + oz);
+    for (let k = 0; k < 4; k++) normals.push(nx, 0, nz);
+    uvs.push(u0, 0, u0, 1, u1, 0, u1, 1);
+    if (side > 0) indices.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
+    else indices.push(v, v + 2, v + 1, v + 1, v + 2, v + 3);
+    v += 4;
+    along += seg;
   }
-  for (let i = 0; i < n - 1; i++) {
-    const a = i * 2;
-    if (side > 0) {
-      indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
-    } else {
-      indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
-    }
-  }
+  if (!indices.length) return;
 
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -843,79 +1019,133 @@ function addWallRibbon(
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   geo.setIndex(indices);
 
+  const tecproTex = makeTecproTexture();
+  tecproTex.repeat.set(1, 1);
   const wallMat = quality.useLambertScenery
-    ? new THREE.MeshLambertMaterial({ color: 0x9aa3b0, side: THREE.DoubleSide })
+    ? new THREE.MeshLambertMaterial({ map: tecproTex, side: THREE.DoubleSide })
     : new THREE.MeshStandardMaterial({
-        color: 0x9aa3b0,
-        metalness: 0.35,
-        roughness: 0.45,
+        map: tecproTex,
+        metalness: 0.05,
+        roughness: 0.85,
         side: THREE.DoubleSide,
       });
   const wall = new THREE.Mesh(geo, wallMat);
   wall.castShadow = quality.sceneryCastShadow;
   wall.receiveShadow = true;
+  wall.name = 'tecpro';
   root.add(wall);
-
-  addWallStripe(root, wallBase, side, 0.85, 1.05, 0xe8e8ec, 0.03);
-  addWallStripe(root, wallBase, side, 0.65, 0.85, 0xc01818, 0.025);
 }
 
-function addWallStripe(
+/** Branded boards behind Tecpro — fictional FORJA/TEC/HYDRO etc. (InstancedMesh) */
+function addSponsorBoards(
   root: THREE.Group,
-  wallBase: THREE.Vector3[],
+  edge: THREE.Vector3[],
   side: number,
-  h0: number,
-  h1: number,
-  color: number,
-  out: number,
+  quality: QualityProfile,
+  pts: TrackPoint[],
 ): void {
-  const n = wallBase.length;
-  const sp: number[] = [];
-  const sn: number[] = [];
-  const su: number[] = [];
-  const si: number[] = [];
-  for (let i = 0; i < n; i++) {
-    const iPrev = i === 0 ? n - 2 : i - 1;
-    const iNext = i === n - 1 ? 1 : i + 1;
-    let dx = wallBase[iNext].x - wallBase[iPrev].x;
-    let dz = wallBase[iNext].z - wallBase[iPrev].z;
+  const boardBase = offsetEdge(edge, side, 1.55);
+  const n = Math.min(boardBase.length, pts.length);
+  if (n < 3) return;
+  const total = pts[pts.length - 1]?.s || 1;
+  const skipM = 18;
+  const spacing = quality.sceneryStep >= 4 ? 28 : quality.sceneryStep >= 3 ? 20 : 14;
+  const atlas = makeSponsorAtlas();
+  const cellH = 1 / SPONSOR_NAMES.length;
+  const boardW = 5.5;
+  const boardH = 1.35;
+  const maxBoards = quality.sceneryStep >= 5 ? 12 : quality.sceneryStep >= 3 ? 22 : 32;
+
+  type BoardX = { x: number; y: number; z: number; yaw: number; si: number };
+  const boards: BoardX[] = [];
+  let nextS = skipM + 4 + (side > 0 ? spacing * 0.5 : 0);
+
+  for (let i = 1; i < n - 1 && boards.length < maxBoards; i++) {
+    const s = pts[Math.min(i, pts.length - 1)].s;
+    if (s < nextS) continue;
+    if (s > total - skipM) break;
+    nextS = s + spacing;
+
+    const p = boardBase[i];
+    let dx = boardBase[i + 1].x - boardBase[i - 1].x;
+    let dz = boardBase[i + 1].z - boardBase[i - 1].z;
     const len = Math.hypot(dx, dz) || 1;
     dx /= len;
     dz /= len;
     const nx = dz * side;
     const nz = -dx * side;
-    const ox = nx * out;
-    const oz = nz * out;
-    const by = wallBase[i].y;
-    sp.push(wallBase[i].x + ox, by + h0, wallBase[i].z + oz);
-    sp.push(wallBase[i].x + ox, by + h1, wallBase[i].z + oz);
-    sn.push(nx, 0, nz, nx, 0, nz);
-    su.push(i * 0.5, 0, i * 0.5, 1);
+    boards.push({
+      x: p.x + nx * 0.05,
+      y: p.y + 0.55 + boardH * 0.5,
+      z: p.z + nz * 0.05,
+      yaw: Math.atan2(nx, nz),
+      si: boards.length % SPONSOR_NAMES.length,
+    });
   }
-  for (let i = 0; i < n - 1; i++) {
-    const a = i * 2;
-    if (side > 0) si.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
-    else si.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+  if (!boards.length) return;
+
+  const geo = new THREE.PlaneGeometry(boardW, boardH);
+  const dummy = new THREE.Object3D();
+  // One InstancedMesh per sponsor type (≤8 draw calls total per side)
+  for (let si = 0; si < SPONSOR_NAMES.length; si++) {
+    const list = boards.filter((b) => b.si === si);
+    if (!list.length) continue;
+    const mat = new THREE.MeshBasicMaterial({
+      map: atlas.clone(),
+      side: THREE.DoubleSide,
+      toneMapped: false,
+    });
+    const map = mat.map!;
+    map.offset.set(0, 1 - (si + 1) * cellH);
+    map.repeat.set(1, cellH);
+    map.needsUpdate = true;
+    const mesh = new THREE.InstancedMesh(geo, mat, list.length);
+    mesh.castShadow = quality.sceneryCastShadow;
+    mesh.frustumCulled = true;
+    for (let i = 0; i < list.length; i++) {
+      const b = list[i];
+      dummy.position.set(b.x, b.y, b.z);
+      dummy.rotation.set(0, b.yaw, 0);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    root.add(mesh);
   }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3));
-  geo.setAttribute('normal', new THREE.Float32BufferAttribute(sn, 3));
-  geo.setAttribute('uv', new THREE.Float32BufferAttribute(su, 2));
-  geo.setIndex(si);
-  const mat = new THREE.MeshBasicMaterial({
-    color,
-    side: THREE.DoubleSide,
-  });
-  root.add(new THREE.Mesh(geo, mat));
+
+  // Shared posts under boards (single InstancedMesh)
+  const postMat = quality.useLambertScenery
+    ? new THREE.MeshLambertMaterial({ color: 0x333338 })
+    : new THREE.MeshStandardMaterial({ color: 0x333338, roughness: 0.6, metalness: 0.4 });
+  const postGeo = new THREE.BoxGeometry(0.12, 0.55, 0.12);
+  const posts = new THREE.InstancedMesh(postGeo, postMat, boards.length);
+  posts.castShadow = quality.sceneryCastShadow;
+  for (let i = 0; i < boards.length; i++) {
+    const b = boards[i];
+    dummy.position.set(b.x, b.y - boardH * 0.5 - 0.28, b.z);
+    dummy.rotation.set(0, 0, 0);
+    dummy.scale.set(1, 1, 1);
+    dummy.updateMatrix();
+    posts.setMatrixAt(i, dummy.matrix);
+  }
+  posts.instanceMatrix.needsUpdate = true;
+  root.add(posts);
 }
 
-function addEdgeLine(root: THREE.Group, edge: THREE.Vector3[], isLeft: boolean): void {
+function addEdgeLine(
+  root: THREE.Group,
+  edge: THREE.Vector3[],
+  isLeft: boolean,
+  pts: TrackPoint[],
+): void {
   const inner = offsetEdge(edge, isLeft ? 1 : -1, 0.15);
   const outer = offsetEdge(edge, isLeft ? 1 : -1, 0.45);
   const left = isLeft ? outer : inner;
   const right = isLeft ? inner : outer;
   const mat = new THREE.MeshBasicMaterial({ color: 0xe0e0e8 });
-  root.add(new THREE.Mesh(buildRibbonGeometry(left, right, 0.052), mat));
+  // Above asphalt (0.055); skip join to avoid S/F stack flicker
+  root.add(new THREE.Mesh(buildRibbonGeometrySkipJoin(left, right, 0.064, pts, 12), mat));
 }
 
 function addKerbs(
@@ -923,6 +1153,7 @@ function addKerbs(
   edge: THREE.Vector3[],
   isLeft: boolean,
   quality: QualityProfile,
+  pts: TrackPoint[],
 ): void {
   const kerbTex = makeKerbTexture();
   kerbTex.repeat.set(28, 1);
@@ -935,11 +1166,14 @@ function addKerbs(
       });
   const side = isLeft ? -1 : 1;
   const inner = offsetEdge(edge, side, 0.05);
-  const outer = offsetEdge(edge, side, 1.15);
+  const outer = offsetEdge(edge, side, 1.05);
   const left = isLeft ? outer : inner;
   const right = isLeft ? inner : outer;
-  // Continuous kerb ribbon (same dense samples as asphalt)
-  const kerb = new THREE.Mesh(buildRibbonGeometry(left, right, 0.058), mat);
+  // Above asphalt; skip ~20 m around S/F so Noghes join stays clear
+  const kerb = new THREE.Mesh(
+    buildRibbonGeometrySkipJoin(left, right, 0.068, pts, 20),
+    mat,
+  );
   kerb.receiveShadow = true;
   kerb.castShadow = quality.sceneryCastShadow;
   root.add(kerb);
@@ -951,7 +1185,7 @@ function addKerbs(
   const lipOuter = offsetEdge(edge, side, 0.7);
   const lipL = isLeft ? lipOuter : lipInner;
   const lipR = isLeft ? lipInner : lipOuter;
-  root.add(new THREE.Mesh(buildRibbonGeometry(lipL, lipR, 0.1), lipMat));
+  root.add(new THREE.Mesh(buildRibbonGeometrySkipJoin(lipL, lipR, 0.09, pts, 20), lipMat));
 }
 
 function addTunnel(
@@ -1187,7 +1421,6 @@ function addScenery(
   const lampEmissive = night ? 1.8 : 0.55;
   const lampGlowMat = makeSceneryMat(0xffe8a0, quality, undefined, 0xffcc66, lampEmissive);
 
-  const segs = Math.min(4, Math.floor(6 / step));
   const detail = Math.max(4, quality.treeDetail);
 
   // Shared unit geometries — scaled per instance
@@ -1305,18 +1538,60 @@ function addScenery(
   }
 
   // Distant Monaco hillside blocks — sit ON terrain heightfield
-  for (let k = 0; k < segs; k++) {
-    const hx = 360 + (k % 3) * 18;
-    const hz = 480 + Math.floor(k / 3) * 22;
-    const hh = 14 + k * 2;
-    if (!intersectsRoadRibbon(pts, hx, hz, 8, margin)) {
-      const gy = sampleTerrainHeight(pts, hx, hz);
-      if (!acceptPropY(pts, hx, hz, gy, 2.0)) continue;
-      buildings.push({
-        x: hx, y: gy + hh / 2, z: hz,
-        sx: 12, sy: hh, sz: 10,
-        color: 0xb0a090,
-      });
+  const clusters = Math.max(2, quality.hillsideClusters);
+  for (let c = 0; c < clusters; c++) {
+    const baseX = 320 + (c % 3) * 55 + (c * 11) % 30;
+    const baseZ = 420 + Math.floor(c / 3) * 70 + (c * 17) % 40;
+    const localN = 2 + (c % 3);
+    for (let k = 0; k < localN; k++) {
+      const hx = baseX + (k % 3) * 16 - 8;
+      const hz = baseZ + Math.floor(k / 3) * 18;
+      const hh = 12 + ((c + k) % 5) * 3.5;
+      if (!intersectsRoadRibbon(pts, hx, hz, 8, margin)) {
+        const gy = sampleTerrainHeight(pts, hx, hz);
+        if (!acceptPropY(pts, hx, hz, gy, 2.0)) continue;
+        buildings.push({
+          x: hx, y: gy + hh / 2, z: hz,
+          sx: 10 + (k % 3) * 2, sy: hh, sz: 8 + (k % 2) * 3,
+          color: bldgColors[(c + k) % bldgColors.length],
+        });
+      }
+    }
+  }
+
+  // Rock outcrops + flower beds (InstancedMesh) — livelier landscape, cheap
+  const rocks: Xform[] = [];
+  const beds: Xform[] = [];
+  const rockStride = Math.max(14, strideM * 2.2);
+  let nextRockS = 8;
+  let decorCount = 0;
+  for (let i = 0; i < pts.length - 1 && decorCount < quality.maxDecor; i++) {
+    if (pts[i].s + 1e-3 < nextRockS) continue;
+    nextRockS = pts[i].s + rockStride;
+    const useLeft = i % 2 === 0;
+    const edge = useLeft ? left : right;
+    const side = useLeft ? -1 : 1;
+    if (i % 3 === 0) {
+      const placed = placeAlongEdgeNormal(pts, edge, i, side, 1.2, margin + 1.5, 3 + (i % 3));
+      if (placed && acceptPropY(pts, placed.x, placed.z, placed.y)) {
+        const rs = 0.8 + (i % 4) * 0.35;
+        rocks.push({
+          x: placed.x, y: placed.y + rs * 0.45, z: placed.z,
+          sx: rs * 1.4, sy: rs * 0.9, sz: rs * 1.1,
+          rotY: (i % 7) * 0.4,
+        });
+        decorCount++;
+      }
+    } else {
+      const placed = placeAlongEdgeNormal(pts, edge, i, side, 1.0, margin + 0.8, 1.5);
+      if (placed && acceptPropY(pts, placed.x, placed.z, placed.y)) {
+        beds.push({
+          x: placed.x, y: placed.y + 0.18, z: placed.z,
+          sx: 2.2 + (i % 3) * 0.4, sy: 0.35, sz: 1.2,
+          rotY: Math.atan2(placed.nx, placed.nz),
+        });
+        decorCount++;
+      }
     }
   }
 
@@ -1363,6 +1638,12 @@ function addScenery(
   addInstanced(palmTop, palmLeafMat, palmTops, false);
   addInstanced(poleGeo, lampMat, poles, false);
   addInstanced(glowGeo, lampGlowMat, glows, false);
+
+  const rockMat = makeSceneryMat(0x6a6860, quality);
+  const bedMat = makeSceneryMat(0xc04070, quality);
+  const rockGeo = new THREE.DodecahedronGeometry(0.7, 0);
+  addInstanced(rockGeo, rockMat, rocks, false);
+  addInstanced(unitBox, bedMat, beds, false);
 
   root.add(group);
 }

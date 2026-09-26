@@ -65,6 +65,14 @@ export class Game {
   private prevWallHit = 0;
   private lastErsActive = false;
   private aiLapArmed: boolean[] = [];
+  /** Forward meters accumulated since last counted lap (player) */
+  private progressSinceLap = 0;
+  /** Distance traveled since last lap for each AI */
+  private aiProgressSinceLap: number[] = [];
+  /** Min fraction of track length required before a lap may count */
+  private static readonly LAP_MIN_FRAC = 0.8;
+  /** Disarm double-count: must leave S/F zone after a lap */
+  private static readonly LAP_REARM_S = 40;
 
   private clock = new THREE.Clock();
   private running = false;
@@ -271,6 +279,8 @@ export class Game {
     this.aiAccum = 0;
     this.lastS = 5;
     this.crossedStart = false;
+    this.progressSinceLap = 0;
+    this.aiProgressSinceLap = this.aiCars.map(() => 0);
     this.phase = 'countdown';
     this.countdownT = 0;
     this.lightsOn = 0;
@@ -478,11 +488,15 @@ export class Game {
 
     const s = elev.s;
     const total = this.track.length;
+    this.progressSinceLap += this.forwardProgress(this.lastS, s, total);
+    // Forward S/F cross: leave high-s zone into low-s while armed + enough distance.
+    // Requires ~80% track traveled since last lap; reverse/oscillation near join ignored.
     if (
       this.crossedStart &&
-      this.lastS > total * 0.85 &&
-      s < total * 0.15 &&
-      this.vehicle.speed > 5
+      this.lastS > total * 0.9 &&
+      s < total * 0.1 &&
+      this.vehicle.speed > 5 &&
+      this.progressSinceLap >= total * Game.LAP_MIN_FRAC
     ) {
       this.vehicle.lastLapMs = this.vehicle.currentLapMs;
       if (this.vehicle.bestLapMs <= 0 || this.vehicle.currentLapMs < this.vehicle.bestLapMs) {
@@ -490,11 +504,13 @@ export class Game {
       }
       this.vehicle.currentLapMs = 0;
       this.vehicle.lap += 1;
+      this.progressSinceLap = 0;
+      this.crossedStart = false; // re-arm only after leaving S/F zone
       if (this.vehicle.lap > this.totalLaps) {
         this.finishRace();
       }
     }
-    if (s > 20) this.crossedStart = true;
+    if (s > Game.LAP_REARM_S) this.crossedStart = true;
     this.lastS = s;
     this.vehicle.distanceAlong = s;
     this.raceTimeMs += dt * 1000;
@@ -511,12 +527,15 @@ export class Game {
         const prevS = ai.vehicle.distanceAlong;
         updateAICar(ai, this.track, aiDt);
         const ns = ai.vehicle.distanceAlong;
-        if (ns > 30) this.aiLapArmed[i] = true;
+        this.aiProgressSinceLap[i] =
+          (this.aiProgressSinceLap[i] ?? 0) + this.forwardProgress(prevS, ns, total);
+        if (ns > Game.LAP_REARM_S) this.aiLapArmed[i] = true;
         if (
           this.aiLapArmed[i] &&
-          prevS > total * 0.85 &&
-          ns < total * 0.15 &&
-          Math.abs(ai.vehicle.speed) > 5
+          prevS > total * 0.9 &&
+          ns < total * 0.1 &&
+          Math.abs(ai.vehicle.speed) > 5 &&
+          this.aiProgressSinceLap[i] >= total * Game.LAP_MIN_FRAC
         ) {
           ai.vehicle.lastLapMs = ai.vehicle.currentLapMs;
           if (ai.vehicle.bestLapMs <= 0 || ai.vehicle.currentLapMs < ai.vehicle.bestLapMs) {
@@ -524,6 +543,8 @@ export class Game {
           }
           ai.vehicle.currentLapMs = 0;
           ai.vehicle.lap += 1;
+          this.aiProgressSinceLap[i] = 0;
+          this.aiLapArmed[i] = false;
         }
       }
     }
@@ -535,6 +556,17 @@ export class Game {
     );
 
     if (this.carMesh) setDrsVisual(this.carMesh, this.vehicle.drsOpen);
+  }
+
+  /** Forward-only along-track meters (ignores reverse / S/F oscillation). */
+  private forwardProgress(prevS: number, nextS: number, total: number): number {
+    if (total <= 1e-3) return 0;
+    let ds = nextS - prevS;
+    // Forward wrap across S/F (end → start)
+    if (ds < -total * 0.5) ds += total;
+    // Backward wrap or reverse motion — do not credit
+    if (ds > total * 0.5) ds -= total;
+    return ds > 0 ? ds : 0;
   }
 
   private finishRace(): void {
