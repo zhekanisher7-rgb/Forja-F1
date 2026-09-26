@@ -89,7 +89,8 @@ export function createAICar(
     wheelbase: 3.6,
   });
 
-  const mesh = createCarMesh(getLivery(config.liveryId), { castShadow });
+  const racingNumber = 11 + (parseInt(id.replace(/\D/g, ''), 10) || 0) * 11;
+  const mesh = createCarMesh(getLivery(config.liveryId), { castShadow, racingNumber });
   mesh.name = `ai-${id}`;
 
   return {

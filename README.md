@@ -68,8 +68,19 @@ npm run preview   # опционально
 ### Нет сине-белых кубов на асфальте
 Убраны клумбы-боксы и синие спонсорские панели; Tecpro — только красно-белые soft-wall’ы (+ верхняя кромка). Декор дальше от ленты с доп. clearance.
 
-### Машины F1 2026 (procedural)
-Узкий нос, undercut sidepods, multi-element крылья, halo со стойками, колёса с диском/спицами, diffuser vanes. Сглаженные Standard-материалы + env reflections — без тяжёлых GLTF.
+### Машины F1 2026 (procedural, детальный силуэт)
+Общий builder для игрока и AI (`CarMesh.ts`), shared BufferGeometry между инстансами:
+- Многосекционный nose (Lathe), bargeboards / turning vanes, floor edge + strakes
+- Sidepods с undercut scoop, louvres, side winglets
+- Engine cover + airbox + shark fin + exhaust tip
+- Halo со стойками, mirrors, helmet hint
+- 4-element front wing + twin pylons + endplates / dive planes / gurney
+- Rear wing (main + DRS flap + lower + beam wing + endplates + gurney)
+- Diffuser vanes + crash structure
+- Suspension wishbones / pushrods / track rods / uprights
+- Колёса: tire + groove, rim, 5 spokes, brake disc, caliper (accent), hub, brake duct
+- Number panels (нос + бока) + accent stripes; team liveries через Standard + envMap
+~5.7k tris / ~180 meshes на машину — Medium FPS OK при 5 машинах.
 
 ### Графика Medium ~60 FPS
 Асфальт 512² с износом/маслом, env cubemap 128² с солнцем, ярче дневной свет, anisotropy 4, чуть больше scenery при том же pixelRatio 1 / без теней.

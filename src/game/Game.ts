@@ -177,7 +177,10 @@ export class Game {
     obj.traverse((o) => {
       const m = o as THREE.Mesh;
       if (m.isMesh) {
-        m.geometry?.dispose();
+        // Shared car geos are reused across player + AI — do not dispose them here.
+        if (m.geometry && !m.geometry.userData?.sharedGeo) {
+          m.geometry.dispose();
+        }
         const mat = m.material;
         if (Array.isArray(mat)) mat.forEach((x) => x.dispose());
         else mat?.dispose();
@@ -227,7 +230,7 @@ export class Game {
 
     const livery = this.resolveLivery(settings);
     const castShadow = profileFor(this.graphics.tier).sceneryCastShadow;
-    this.carMesh = createCarMesh(livery, { castShadow: castShadow });
+    this.carMesh = createCarMesh(livery, { castShadow: castShadow, racingNumber: 1 });
     this.scene.add(this.carMesh);
 
     const start = sampleTrack(this.track.points, 5);
