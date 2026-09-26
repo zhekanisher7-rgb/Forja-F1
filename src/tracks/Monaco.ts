@@ -9,7 +9,8 @@
  */
 import { buildCenterline, trackLength, type TrackData } from './Track';
 
-const ROAD_WIDTH_SCALE = 2.05;
+/** ~2× previous 2.05 → arcade street width ~28–48 m */
+const ROAD_WIDTH_SCALE = 4.0;
 
 /** Handcrafted centerline approximating Monaco with vertical profile */
 const RAW: { x: number; z: number; y?: number; width?: number }[] = [
@@ -71,14 +72,15 @@ const RAW: { x: number; z: number; y?: number; width?: number }[] = [
   { x: -70, z: 20, y: 2.0, width: 9 },
   // La Rascasse (right hairpin) — descend toward pit
   { x: -40, z: -20, y: 1.0, width: 8 },
-  { x: 0, z: -50, y: 0.4, width: 8 },
-  { x: 40, z: -55, y: 0.2, width: 8 },
-  // Anthony Noghes → pit straight — approach from -Z so S/F tangents match
-  { x: 70, z: -40, y: 0.1, width: 10 },
-  { x: 50, z: -55, y: 0.05, width: 11 },
-  { x: 42, z: -40, y: 0, width: 12 },
-  { x: 40, z: -18, y: 0, width: 12 },
-  { x: 40, z: 0, y: 0, width: 12 }, // close loop (duplicate of start)
+  { x: -5, z: -50, y: 0.4, width: 8 },
+  { x: 25, z: -62, y: 0.25, width: 8 },
+  { x: 48, z: -58, y: 0.15, width: 9 },
+  // Anthony Noghes — clear continuous right into S/F (+Z), no ribbon fold
+  { x: 58, z: -40, y: 0.08, width: 10 },
+  { x: 50, z: -22, y: 0.04, width: 11 },
+  { x: 43, z: -10, y: 0.02, width: 12 },
+  { x: 40, z: -4, y: 0, width: 12 },
+  { x: 40, z: 0, y: 0, width: 12 }, // close loop — tangent matches S/F (+Z)
 ].map((p) => ({ ...p, width: (p.width ?? 10) * ROAD_WIDTH_SCALE }));
 
 
@@ -96,11 +98,11 @@ export function createMonacoTrack(): TrackData {
       { startS: length * 0.52, endS: length * 0.60 },
     ],
     gravel: [
-      // Kept clear of asphalt (+margin) after ROAD_WIDTH_SCALE bump
-      { x: 55, z: 290, w: 14, d: 10, rot: 0.4, y: 0.8 },
-      { x: 260, z: 440, w: 12, d: 9, rot: -0.3, y: 6 },
-      { x: 270, z: -140, w: 16, d: 12, rot: 0.1, y: 0 },
-      { x: -15, z: 80, w: 12, d: 10, rot: 0.6, y: 2.5 },
+      // Pushed further out after ROAD_WIDTH_SCALE ~4
+      { x: 40, z: 310, w: 14, d: 10, rot: 0.4, y: 0.8 },
+      { x: 250, z: 420, w: 12, d: 9, rot: -0.3, y: 6 },
+      { x: 270, z: -160, w: 16, d: 12, rot: 0.1, y: 0 },
+      { x: -30, z: 90, w: 12, d: 10, rot: 0.6, y: 2.5 },
     ],
     startIndex: 0,
   };

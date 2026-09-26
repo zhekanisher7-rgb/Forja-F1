@@ -30,6 +30,7 @@ import { TutorialOverlay } from '../ui/Tutorial';
 import { ResultsScreen } from '../ui/Results';
 import { getLivery, type Livery } from '../vehicles/Liveries';
 import { createAIGrid, updateAICar, type AICar } from '../ai/AIDriver';
+import { resolveFieldCollisions } from '../physics/CarCollision';
 
 type Phase = 'menu' | 'countdown' | 'racing' | 'finished';
 
@@ -232,10 +233,10 @@ export class Game {
     this.physics = new VehiclePhysics({
       difficulty: settings.difficulty,
       weather,
-      mass: 800,
-      maxPower: 750,
-      dragCd: 0.9,
-      downforceCl: 3.2,
+      mass: 620,
+      maxPower: 980,
+      dragCd: 0.88,
+      downforceCl: 3.0,
       wheelbase: 3.6,
     });
 
@@ -346,6 +347,7 @@ export class Game {
     } else if (this.phase === 'racing' && this.vehicle && this.physics) {
       this.updateRacing(dt);
       this.syncCarMesh();
+      this.syncAIMeshes();
       this.cameraCtrl.update(this.vehicle, dt);
       this.hud.update(this.vehicle, this.lastErsActive, this.fpsValue, this.getPlayerPosition());
     } else if (this.phase === 'finished' && this.vehicle) {
@@ -525,6 +527,12 @@ export class Game {
         }
       }
     }
+
+    // Car–car hitboxes: player↔AI and AI↔AI — bounce/slow, no ghosting
+    resolveFieldCollisions(
+      this.vehicle,
+      this.aiCars.map((ai) => ai.vehicle),
+    );
 
     if (this.carMesh) setDrsVisual(this.carMesh, this.vehicle.drsOpen);
   }

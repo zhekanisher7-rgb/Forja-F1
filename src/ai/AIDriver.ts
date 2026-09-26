@@ -82,10 +82,10 @@ export function createAICar(
   const physics = new VehiclePhysics({
     difficulty: config.skill > 0.7 ? 'pro' : config.skill > 0.4 ? 'amateur' : 'rookie',
     weather,
-    mass: 800,
-    maxPower: 680 + config.skill * 90,
-    dragCd: 0.92,
-    downforceCl: 3.0,
+    mass: 620,
+    maxPower: 850 + config.skill * 110,
+    dragCd: 0.9,
+    downforceCl: 2.9,
     wheelbase: 3.6,
   });
 

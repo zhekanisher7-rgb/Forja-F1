@@ -35,9 +35,9 @@ export class InputManager {
   }
 
   update(dt: number): InputState {
-    // Slower analog ramps = smoother throttle / steering feel
-    const throttleRamp = 2.4;
-    const steerRamp = 2.2;
+    // Arcade ramps: quick but not instant (avoids twitch on wide track)
+    const throttleRamp = 3.2;
+    const steerRamp = 4.0;
 
     const wantGas = KEYS['KeyW'] || KEYS['ArrowUp'];
     const wantBrake = KEYS['ShiftLeft'] || KEYS['ShiftRight'];
