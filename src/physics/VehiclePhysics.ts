@@ -75,11 +75,11 @@ export const PLAYER_VEHICLE_SPEC = {
 
 /** Arcade yaw blend toward limited steer rate (same in every mode). */
 export const PLAYER_STEER_YAW_SMOOTH = {
-  keep: 0.38, // balanced — between old soft 0.58 and extreme 0.22
-  apply: 0.62, // balanced — between old soft 0.42 and extreme 0.78
+  keep: 0.50, // more keep — softer toward earlier 0.58 comfort
+  apply: 0.50, // less apply — less snappy yaw (QR/TT)
   /** Mild full-lock bias so held L/R still bites without snap-spin */
-  fullKeep: 0.30,
-  fullApply: 0.70,
+  fullKeep: 0.42,
+  fullApply: 0.58,
 } as const;
 
 const GEAR_RATIOS = [0, 3.2, 2.4, 1.9, 1.55, 1.3, 1.12, 0.98, 0.88];
@@ -240,18 +240,17 @@ export class VehiclePhysics {
     if (Math.abs(state.speed) < 0.05 && mainBrake > 0.1) state.speed = 0;
     if (state.gear !== -1 && state.speed < -0.5) state.speed = 0;
 
-    // Steering — middle-ground arcade (A left / D right). Softened from extreme
-    // full-lock snap; still sharper than the old understeer-heavy setup. QR=TT.
-    const maxSteer = 0.78 / (1 + Math.abs(state.speed) / 55);
+    // Steering — softer arcade (A left / D right). More yaw keep, lower maxSteer. QR=TT.
+    const maxSteer = 0.68 / (1 + Math.abs(state.speed) / 50);
     const steerAngle = input.steer * maxSteer;
     const latGripBudget = grip * (1 + downforce / (this.cfg.mass * 9.81)) * 1.05;
     const yawRate = (state.speed / Math.max(0.1, this.cfg.wheelbase)) * Math.tan(steerAngle);
     const maxYaw = latGripBudget * 9.81 / Math.max(1, Math.abs(state.speed));
     let limitedYaw = Math.max(-maxYaw, Math.min(maxYaw, yawRate));
     const fullLock = Math.abs(input.steer) > 0.92;
-    // Mild full-lock assist — less aggressive than prior 0.25/0.75 blend
+    // Mild full-lock assist — softer bite than mid patch
     if (fullLock && Math.abs(yawRate) > Math.abs(limitedYaw)) {
-      limitedYaw = limitedYaw * 0.45 + yawRate * 0.55;
+      limitedYaw = limitedYaw * 0.55 + yawRate * 0.45;
     }
     if (state.wheelLock) {
       state.angularVel = state.angularVel * 0.95 + limitedYaw * 0.25;

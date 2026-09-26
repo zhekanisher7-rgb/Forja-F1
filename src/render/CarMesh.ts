@@ -5,12 +5,11 @@ import type { Livery } from '../vehicles/Liveries';
  * Procedural F1-2026-inspired car mesh.
  *
  * Design goals:
- * - Rich silhouette (nose, bargeboards, undercut sidepods, multi-element wings,
- *   halo, mirrors, suspension, detailed wheels, diffuser, livery panels)
- * - Smooth Standard materials + env reflections (scene.environment)
- * - Shared BufferGeometry across player + AI instances (rebuilt after dispose)
- * - Per-car materials so liveries stay independent
- * - Medium-tier FPS: modest segment counts, no insane per-instance polycount
+ * - F1-2026 silhouette: sculpted nose/sidepods/cover (lathes), multi-element wings,
+ *   halo, mirrors, suspension, detailed wheels, diffuser, livery panels
+ * - Not blocky cubes — curved tub taper, undercut pods, arched wing elements
+ * - MeshPhysical clearcoat paint + env reflections (scene.environment)
+ * - Shared BufferGeometry across player + AI (~5 cars); modest segment counts
  */
 
 export interface CarMeshOptions {
@@ -127,17 +126,17 @@ function makeNoseLathe(): THREE.BufferGeometry {
   // Profile along lathe Y: base (large r) at y=0 → tip (small r) at y=L.
   // After reorient, base at local z=0 and tip at +Z (car forward).
   const pts: THREE.Vector2[] = [];
-  const n = 12;
-  const L = 1.32;
+  const n = 16;
+  const L = 1.45;
   for (let i = 0; i <= n; i++) {
     const t = i / n; // 0 = base, 1 = tip
-    const r = 0.22 * (1 - t) * (1 - t) + 0.04 + Math.sin((1 - t) * Math.PI) * 0.02;
+    const r = 0.26 * (1 - t) * (1 - t) + 0.035 + Math.sin((1 - t) * Math.PI) * 0.035;
     pts.push(new THREE.Vector2(r, t * L));
   }
-  const geo = new THREE.LatheGeometry(pts, 16);
-  // Lathe Y → +X via rotateZ(-90), then +X → +Z via rotateY(-90)
+  const geo = new THREE.LatheGeometry(pts, 18);
   geo.rotateZ(-Math.PI / 2);
   geo.rotateY(-Math.PI / 2);
+  geo.scale(1, 0.78, 1); // flatten oval nose
   geo.computeVertexNormals();
   return geo;
 }
@@ -145,12 +144,12 @@ function makeNoseLathe(): THREE.BufferGeometry {
 function makeCoverTaperLathe(): THREE.BufferGeometry {
   // Wide at z=0 (front of taper) → narrow at +Z; we'll place + rotate so +Z faces rear.
   const pts: THREE.Vector2[] = [];
-  for (let i = 0; i <= 10; i++) {
-    const t = i / 10;
-    const r = 0.22 * (1 - t * 0.65) + 0.035;
-    pts.push(new THREE.Vector2(r, t * 0.75));
+  for (let i = 0; i <= 12; i++) {
+    const t = i / 12;
+    const r = 0.24 * (1 - t * 0.72) + 0.04 + Math.sin((1 - t) * Math.PI) * 0.015;
+    pts.push(new THREE.Vector2(r, t * 0.85));
   }
-  const geo = new THREE.LatheGeometry(pts, 14);
+  const geo = new THREE.LatheGeometry(pts, 16);
   geo.rotateZ(-Math.PI / 2);
   geo.rotateY(Math.PI / 2);
   // Flip so taper extends toward -Z (rear) when placed
@@ -159,23 +158,58 @@ function makeCoverTaperLathe(): THREE.BufferGeometry {
   return geo;
 }
 
+/** Undercut sidepod body — ellipse taper along Z (F1-2026 inlet / coke-bottle cue). */
+function makeSidepodLathe(): THREE.BufferGeometry {
+  const pts: THREE.Vector2[] = [];
+  const L = 1.55;
+  for (let i = 0; i <= 14; i++) {
+    const t = i / 14; // 0 = front scoop, 1 = rear outlet
+    const flare = Math.sin(t * Math.PI);
+    const r = 0.12 + 0.16 * flare * (1 - t * 0.35) + 0.04 * (1 - t);
+    pts.push(new THREE.Vector2(r, t * L));
+  }
+  const geo = new THREE.LatheGeometry(pts, 14);
+  geo.rotateZ(-Math.PI / 2);
+  geo.rotateY(-Math.PI / 2);
+  // Flatten vertically into a pod (not a full tube)
+  geo.scale(1, 0.72, 1);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/** Engine cover main — rounded loft along car length. */
+function makeCoverLathe(): THREE.BufferGeometry {
+  const pts: THREE.Vector2[] = [];
+  for (let i = 0; i <= 12; i++) {
+    const t = i / 12;
+    const r = 0.26 * (1 - t * 0.15) + 0.06 * Math.sin(t * Math.PI);
+    pts.push(new THREE.Vector2(r, t * 1.35));
+  }
+  const geo = new THREE.LatheGeometry(pts, 16);
+  geo.rotateZ(-Math.PI / 2);
+  geo.rotateY(Math.PI / 2);
+  geo.scale(1, 0.85, -1);
+  geo.computeVertexNormals();
+  return geo;
+}
+
 function buildSharedGeos(): SharedGeos {
   return {
-    tubCore: new THREE.BoxGeometry(1.2, 0.3, 2.6),
-    tubFront: new THREE.BoxGeometry(0.92, 0.26, 0.72),
-    tubRear: new THREE.BoxGeometry(1.1, 0.28, 0.7),
-    tubMid: new THREE.BoxGeometry(1.05, 0.28, 0.9),
-    cokeBottle: new THREE.BoxGeometry(0.7, 0.24, 0.55),
+    tubCore: new THREE.CapsuleGeometry(0.42, 1.9, 6, 12),
+    tubFront: new THREE.CapsuleGeometry(0.34, 0.35, 4, 10),
+    tubRear: new THREE.CapsuleGeometry(0.36, 0.32, 4, 10),
+    tubMid: new THREE.CapsuleGeometry(0.38, 0.45, 4, 10),
+    cokeBottle: new THREE.CapsuleGeometry(0.28, 0.28, 4, 10),
     noseLathe: makeNoseLathe(),
-    noseBridge: new THREE.BoxGeometry(0.42, 0.2, 0.58),
-    noseTip: new THREE.SphereGeometry(0.085, 12, 8),
+    noseBridge: new THREE.CapsuleGeometry(0.16, 0.28, 4, 8),
+    noseTip: new THREE.SphereGeometry(0.09, 14, 10),
     noseCamera: new THREE.BoxGeometry(0.06, 0.045, 0.08),
 
-    sidepod: new THREE.BoxGeometry(0.5, 0.4, 1.55),
-    sidepodTop: new THREE.BoxGeometry(0.42, 0.1, 1.2),
-    scoop: new THREE.BoxGeometry(0.34, 0.17, 0.58),
-    scoopLip: new THREE.BoxGeometry(0.36, 0.04, 0.12),
-    outlet: new THREE.BoxGeometry(0.3, 0.22, 0.22),
+    sidepod: makeSidepodLathe(),
+    sidepodTop: new THREE.CapsuleGeometry(0.16, 0.85, 4, 10),
+    scoop: new THREE.CylinderGeometry(0.12, 0.18, 0.55, 12),
+    scoopLip: new THREE.TorusGeometry(0.16, 0.022, 8, 16, Math.PI),
+    outlet: new THREE.CylinderGeometry(0.1, 0.14, 0.22, 10),
     louvre: new THREE.BoxGeometry(0.28, 0.012, 0.08),
 
     bargeBoard: new THREE.BoxGeometry(0.032, 0.22, 1.1),
@@ -191,22 +225,22 @@ function buildSharedGeos(): SharedGeos {
     haloStay: new THREE.BoxGeometry(0.022, 0.02, 0.38),
     haloMount: new THREE.BoxGeometry(0.08, 0.04, 0.08),
 
-    cover: new THREE.BoxGeometry(0.46, 0.42, 1.35),
+    cover: makeCoverLathe(),
     coverTaper: makeCoverTaperLathe(),
-    airbox: new THREE.BoxGeometry(0.28, 0.22, 0.34),
+    airbox: new THREE.CapsuleGeometry(0.12, 0.14, 4, 10),
     airIntake: new THREE.CylinderGeometry(0.075, 0.1, 0.14, 12),
-    sharkFin: new THREE.BoxGeometry(0.03, 0.38, 0.95),
+    sharkFin: new THREE.BoxGeometry(0.028, 0.42, 1.05),
     exhaust: new THREE.CylinderGeometry(0.035, 0.04, 0.12, 10),
 
     mirrorGlass: new THREE.BoxGeometry(0.12, 0.07, 0.02),
     mirrorHousing: new THREE.BoxGeometry(0.14, 0.085, 0.05),
     mirrorStalk: new THREE.CylinderGeometry(0.012, 0.014, 0.22, 8),
 
-    fwMain: new THREE.BoxGeometry(1.95, 0.042, 0.42),
-    fw2: new THREE.BoxGeometry(1.78, 0.032, 0.22),
-    fw3: new THREE.BoxGeometry(1.58, 0.026, 0.14),
-    fw4: new THREE.BoxGeometry(1.38, 0.022, 0.1),
-    fwEndplate: new THREE.BoxGeometry(0.042, 0.32, 0.55),
+    fwMain: new THREE.BoxGeometry(1.95, 0.035, 0.4),
+    fw2: new THREE.BoxGeometry(1.78, 0.028, 0.2),
+    fw3: new THREE.BoxGeometry(1.58, 0.022, 0.13),
+    fw4: new THREE.BoxGeometry(1.38, 0.018, 0.09),
+    fwEndplate: new THREE.BoxGeometry(0.032, 0.34, 0.58),
     fwFootplate: new THREE.BoxGeometry(0.32, 0.022, 0.24),
     fwDive: new THREE.BoxGeometry(0.2, 0.02, 0.16),
     fwPylon: new THREE.BoxGeometry(0.05, 0.2, 0.065),
@@ -217,12 +251,12 @@ function buildSharedGeos(): SharedGeos {
     rearFence: new THREE.BoxGeometry(0.025, 0.14, 0.55),
     epSlot: new THREE.BoxGeometry(0.05, 0.04, 0.12),
 
-    rwMain: new THREE.BoxGeometry(1.42, 0.055, 0.32),
-    rwFlap: new THREE.BoxGeometry(1.32, 0.042, 0.18),
-    rwLower: new THREE.BoxGeometry(1.2, 0.03, 0.12),
-    rwEndplate: new THREE.BoxGeometry(0.038, 0.58, 0.4),
-    rwPillar: new THREE.BoxGeometry(0.038, 0.58, 0.055),
-    beamWing: new THREE.BoxGeometry(1.18, 0.032, 0.11),
+    rwMain: new THREE.BoxGeometry(1.42, 0.045, 0.3),
+    rwFlap: new THREE.BoxGeometry(1.32, 0.035, 0.16),
+    rwLower: new THREE.BoxGeometry(1.2, 0.025, 0.11),
+    rwEndplate: new THREE.BoxGeometry(0.03, 0.62, 0.42),
+    rwPillar: new THREE.BoxGeometry(0.032, 0.58, 0.05),
+    beamWing: new THREE.BoxGeometry(1.18, 0.028, 0.1),
 
     diffBody: new THREE.BoxGeometry(1.28, 0.22, 0.36),
     diffVane: new THREE.BoxGeometry(0.028, 0.18, 0.3),
@@ -458,42 +492,35 @@ export function createCarMesh(livery: Livery, opts?: CarMeshOptions): THREE.Grou
 
   g.userData.materials = { prim, sec, acc, carbon, rubber, glass, rimMat, discMat, caliperMat };
 
-  // ═══ CHASSIS TUB ═══════════════════════════════════════════════════
-  place(g, mesh(geos.tubCore, prim, 'primary'), 0, 0.36, -0.05);
-  place(g, mesh(geos.tubFront, prim, 'primary'), 0, 0.34, 1.38);
-  place(g, mesh(geos.tubMid, prim, 'primary'), 0, 0.35, 0.7);
-  place(g, mesh(geos.tubRear, prim, 'primary'), 0, 0.37, -1.48);
-  // Coke-bottle taper ahead of rear wheels
-  place(g, mesh(geos.cokeBottle, prim, 'primary'), 0, 0.36, -1.05);
+  // ═══ CHASSIS TUB (capsules along car Z) ═════════════════════════════
+  place(g, mesh(geos.tubCore, prim, 'primary'), 0, 0.38, -0.05, Math.PI / 2, 0, 0);
+  place(g, mesh(geos.tubFront, prim, 'primary'), 0, 0.36, 1.35, Math.PI / 2, 0, 0);
+  place(g, mesh(geos.tubMid, prim, 'primary'), 0, 0.37, 0.65, Math.PI / 2, 0, 0);
+  place(g, mesh(geos.tubRear, prim, 'primary'), 0, 0.39, -1.45, Math.PI / 2, 0, 0);
+  place(g, mesh(geos.cokeBottle, prim, 'primary'), 0, 0.38, -1.0, Math.PI / 2, 0, 0);
 
-  // Accent shoulder panels (livery flair)
   for (const sx of [-1, 1] as const) {
-    place(g, mesh(geos.shoulderPanel, acc, 'accent'), sx * 0.55, 0.52, 0.15);
+    place(g, mesh(geos.shoulderPanel, acc, 'accent'), sx * 0.55, 0.54, 0.15);
   }
-  // Center accent stripe along engine cover line
-  place(g, mesh(geos.accentStripe, acc, 'accent'), 0, 0.72, -0.35);
+  place(g, mesh(geos.accentStripe, acc, 'accent'), 0, 0.78, -0.35);
 
-  // ═══ NOSE (multi-part) ═════════════════════════════════════════════
-  place(g, mesh(geos.noseLathe, prim, 'primary'), 0, 0.3, 1.72);
-  place(g, mesh(geos.noseBridge, prim, 'primary'), 0, 0.31, 1.62);
-  placeScaled(g, mesh(geos.noseTip, carbon, 'carbon'), 0, 0.28, 3.15, 1, 0.72, 1.45);
-  place(g, mesh(geos.noseCamera, carbon, 'carbon'), 0, 0.4, 2.55);
+  // ═══ NOSE (sculpted lathe) ═════════════════════════════════════════
+  place(g, mesh(geos.noseLathe, prim, 'primary'), 0, 0.32, 1.65);
+  place(g, mesh(geos.noseBridge, prim, 'primary'), 0, 0.33, 1.55, Math.PI / 2, 0, 0);
+  placeScaled(g, mesh(geos.noseTip, carbon, 'carbon'), 0, 0.3, 3.2, 1, 0.7, 1.35);
+  place(g, mesh(geos.noseCamera, carbon, 'carbon'), 0, 0.42, 2.6);
 
-  // ═══ SIDEPODS + UNDERCUT ═══════════════════════════════════════════
+  // ═══ SIDEPODS + UNDERCUT (lathed pods) ══════════════════════════════
   for (const sx of [-1, 1] as const) {
-    place(g, mesh(geos.sidepod, sec, 'secondary'), sx * 0.78, 0.4, -0.02);
-    place(g, mesh(geos.sidepodTop, prim, 'primary'), sx * 0.76, 0.62, -0.1);
-    // Undercut scoop + lip
-    place(g, mesh(geos.scoop, carbon, 'carbon'), sx * 0.74, 0.22, 0.68);
-    place(g, mesh(geos.scoopLip, carbon, 'carbon'), sx * 0.74, 0.3, 0.95);
-    // Cooling outlet
-    place(g, mesh(geos.outlet, carbon, 'carbon'), sx * 0.72, 0.44, -0.72);
-    // Louvre slots on outlet
+    place(g, mesh(geos.sidepod, sec, 'secondary'), sx * 0.72, 0.42, -0.05);
+    place(g, mesh(geos.sidepodTop, prim, 'primary'), sx * 0.7, 0.64, -0.08, Math.PI / 2, 0, 0);
+    place(g, mesh(geos.scoop, carbon, 'carbon'), sx * 0.7, 0.24, 0.72, Math.PI / 2, 0, 0);
+    place(g, mesh(geos.scoopLip, carbon, 'carbon'), sx * 0.7, 0.28, 0.98, 0, Math.PI / 2, 0);
+    place(g, mesh(geos.outlet, carbon, 'carbon'), sx * 0.68, 0.46, -0.75, Math.PI / 2, 0, 0);
     for (let i = 0; i < 3; i++) {
-      place(g, mesh(geos.louvre, carbon, 'carbon'), sx * 0.72, 0.38 + i * 0.05, -0.62);
+      place(g, mesh(geos.louvre, carbon, 'carbon'), sx * 0.7, 0.4 + i * 0.05, -0.65);
     }
-    // Sidepod winglet (2022+ style)
-    place(g, mesh(geos.sideWinglet, carbon, 'carbon'), sx * 0.95, 0.55, -0.35, 0, 0, sx * -0.25);
+    place(g, mesh(geos.sideWinglet, carbon, 'carbon'), sx * 0.92, 0.56, -0.35, 0, 0, sx * -0.28);
   }
 
   // ═══ BARGEBOARDS / TURNING VANES ═══════════════════════════════════
@@ -527,11 +554,11 @@ export function createCarMesh(livery: Livery, opts?: CarMeshOptions): THREE.Grou
   }
 
   // ═══ ENGINE COVER / AIRBOX / FIN / EXHAUST ═════════════════════════
-  place(g, mesh(geos.cover, prim, 'primary'), 0, 0.58, -0.52);
-  place(g, mesh(geos.coverTaper, prim, 'primary'), 0, 0.62, -1.35);
-  place(g, mesh(geos.airbox, carbon, 'carbon'), 0, 0.86, -0.1);
-  place(g, mesh(geos.airIntake, carbon, 'carbon'), 0, 0.88, 0.1, Math.PI / 2, 0, 0);
-  place(g, mesh(geos.sharkFin, acc, 'accent'), 0, 0.92, -0.72);
+  place(g, mesh(geos.cover, prim, 'primary'), 0, 0.62, -0.15);
+  place(g, mesh(geos.coverTaper, prim, 'primary'), 0, 0.64, -1.25);
+  place(g, mesh(geos.airbox, carbon, 'carbon'), 0, 0.9, -0.08, Math.PI / 2, 0, 0);
+  place(g, mesh(geos.airIntake, carbon, 'carbon'), 0, 0.92, 0.12, Math.PI / 2, 0, 0);
+  place(g, mesh(geos.sharkFin, acc, 'accent'), 0, 0.98, -0.7);
   place(g, mesh(geos.antenna, carbon, 'carbon'), 0.06, 1.1, -0.05);
   place(g, mesh(geos.exhaust, carbon, 'carbon'), 0, 0.42, -1.95, Math.PI / 2, 0, 0);
 
@@ -543,10 +570,10 @@ export function createCarMesh(livery: Livery, opts?: CarMeshOptions): THREE.Grou
   }
 
   // ═══ FRONT WING (4 elements + endplates + dive planes) ═════════════
-  place(g, mesh(geos.fwMain, carbon, 'carbon'), 0, 0.1, 2.7);
-  place(g, mesh(geos.fw2, acc, 'accent'), 0, 0.152, 2.62);
-  place(g, mesh(geos.fw3, carbon, 'carbon'), 0, 0.195, 2.55);
-  place(g, mesh(geos.fw4, carbon, 'carbon'), 0, 0.23, 2.5);
+  place(g, mesh(geos.fwMain, carbon, 'carbon'), 0, 0.1, 2.72, 0.04, 0, 0);
+  place(g, mesh(geos.fw2, acc, 'accent'), 0, 0.148, 2.64, 0.06, 0, 0);
+  place(g, mesh(geos.fw3, carbon, 'carbon'), 0, 0.188, 2.57, 0.08, 0, 0);
+  place(g, mesh(geos.fw4, carbon, 'carbon'), 0, 0.22, 2.52, 0.1, 0, 0);
   // Twin nose pylons (modern F1 mount)
   for (const sx of [-0.08, 0.08]) {
     place(g, mesh(geos.fwPylon, carbon, 'carbon'), sx, 0.2, 2.58);
@@ -563,13 +590,13 @@ export function createCarMesh(livery: Livery, opts?: CarMeshOptions): THREE.Grou
   // ═══ REAR WING (main + DRS flap + lower + beam + endplates) ════════
   const rw = mesh(geos.rwMain, carbon, 'carbon');
   rw.name = 'rearWing';
-  place(g, rw, 0, 1.02, -1.72);
+  place(g, rw, 0, 1.05, -1.72, -0.08, 0, 0);
 
   const rwFlap = mesh(geos.rwFlap, acc, 'accent');
   rwFlap.name = 'rearWingFlap';
-  place(g, rwFlap, 0, 0.92, -1.68);
+  place(g, rwFlap, 0, 0.94, -1.66, -0.12, 0, 0);
 
-  place(g, mesh(geos.rwLower, carbon, 'carbon'), 0, 0.82, -1.7);
+  place(g, mesh(geos.rwLower, carbon, 'carbon'), 0, 0.84, -1.7, -0.05, 0, 0);
   place(g, mesh(geos.beamWing, carbon, 'carbon'), 0, 0.28, -1.9);
 
   for (const sx of [-1, 1] as const) {

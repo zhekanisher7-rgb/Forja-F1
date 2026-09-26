@@ -67,13 +67,13 @@ npm run preview   # опционально
 ## Что улучшено в этой итерации
 
 ### Руль острее (удержание L/R)
-`steerRamp` 8 (середина между 4 и 16), `PLAYER_STEER_YAW_SMOOTH` keep/apply ≈0.38/0.62, `maxSteer` 0.78 — мягче экстрема 16, острее старого soft. QR = TT. A/← влево, D/→ вправо.
+`steerRamp` 6 (мягче к комфорту 5.5–6.5), `PLAYER_STEER_YAW_SMOOTH` keep/apply 0.50/0.50, `maxSteer` 0.68 — больше keep на yaw. QR = TT. A/← влево, D/→ вправо.
 
 ### Теххарактеристики болида
 В экране старта (гараж/ливрея) — блок «Технические характеристики» (RU): масса, мощность, ERS кВт, макс. скорость, Cl/Cd, база, шины. Цифры из `PLAYER_VEHICLE_SPEC`.
 
 ### Интерлагос + Сузука без z-fight
-Переразметка лент: Interlagos climb на западе (не над Senna S); Suzuka — Dunlop ΔY≥5.5 + return-flyover над 130R (ΔY≥6), без копланарных XZ. Terrain sink глубже; кербы/Tecpro/плечи/трава пропускают копланарные чужие ленты.
+Переразметка лент: Interlagos climb на западе (не над Senna S); Suzuka — Dunlop ΔY≥6.8 + return-flyover над 130R (ΔY≥6.5); спуск flyover заканчивается на южном stub до стыка с S/F — **0 копланарных** overlap (диагностика). Terrain sink глубже; кербы/Tecpro/плечи/трава пропускают копланарные чужие ленты.
 
 ### Стены = Tecpro (после туннеля и везде)
 Физика жёстко клампит на `TRACK_BARRIER_OUT` (1.2 м от края асфальта) — совпадает с визуальными Tecpro. Больше нельзя «пролететь» сквозь барьер на выходе из туннеля Монако.
@@ -95,19 +95,13 @@ npm run preview   # опционально
 ### Одинаковая физика игрока: Quick Race = Time Trial
 `PLAYER_VEHICLE_SPEC` + `INPUT_SMOOTHING` / `PLAYER_STEER_YAW_SMOOTH` — одна масса, мощность, ramp газа/руля в обоих режимах. Столкновения с AI не режут `damageMul`/maxPower игрока.
 
-### Машины F1 2026 (procedural, детальный силуэт)
+### Машины F1 2026 (procedural, не blocky)
 Общий builder для игрока и AI (`CarMesh.ts`), shared BufferGeometry между инстансами:
-- Многосекционный nose (Lathe), bargeboards / turning vanes, floor edge + strakes
-- Sidepods с undercut scoop, louvres, side winglets
-- Engine cover + airbox + shark fin + exhaust tip
-- Halo со стойками, mirrors, helmet hint
-- 4-element front wing + twin pylons + endplates / dive planes / gurney
-- Rear wing (main + DRS flap + lower + beam wing + endplates + gurney)
-- Diffuser vanes + crash structure
-- Suspension wishbones / pushrods / track rods / uprights
-- Колёса: tire + groove, rim, 5 spokes, brake disc, caliper (accent), hub, brake duct
-- Number panels (нос + бока) + accent stripes; team liveries через Standard + envMap
-~5.7k tris / ~180 meshes на машину — Medium FPS OK при 5 машинах.
+- Sculpted lathe nose / sidepods / engine cover; capsule tub (не кубы)
+- Bargeboards, floor strakes, undercut scoop + louvres, side winglets
+- Halo, mirrors, helmet; 4-element FW + RW (DRS flap, beam, endplates) с лёгким anhedral
+- Diffuser + suspension + детальные колёса; clearcoat MeshPhysical paint
+- Number panels + accent stripes; ~5 машин на Medium без просадки FPS
 
 ### Графика Medium ~60 FPS
 Асфальт 512² с износом/маслом, env cubemap 128² с солнцем, ярче дневной свет, anisotropy 4, чуть больше scenery при том же pixelRatio 1 / без теней.
