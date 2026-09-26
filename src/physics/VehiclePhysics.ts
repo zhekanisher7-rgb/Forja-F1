@@ -43,6 +43,8 @@ export interface VehicleState {
   lap: number;
   distanceAlong: number; // track progress meters
   finished: boolean;
+  /** Race clock ms when this car completed the race; unset while racing. */
+  finishTimeMs: number;
   bestLapMs: number;
   currentLapMs: number;
   lastLapMs: number;
@@ -105,6 +107,7 @@ export function createVehicleState(
     lap: 1,
     distanceAlong: 0,
     finished: false,
+    finishTimeMs: 0,
     bestLapMs: 0,
     currentLapMs: 0,
     lastLapMs: 0,

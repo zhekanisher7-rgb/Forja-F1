@@ -345,6 +345,7 @@ export function createTrackMesh(
   }
 
   addTunnel(root, pts, 0.48, 0.58, quality);
+  addTunnelEntranceRocks(root, pts, 0.48, quality);
   addOverpassSupports(root, pts, quality);
   addHarbor(root, pts, quality);
   addScenery(root, pts, left, right, quality, night);
@@ -1226,6 +1227,116 @@ function addKerbs(
   root.add(new THREE.Mesh(buildRibbonGeometrySkipJoin(lipL, lipR, 0.09, pts, 20), lipMat));
 }
 
+/**
+ * Large readable rock / cliff landmark at Monaco tunnel entrance (Portier).
+ * Kept clearly OFF asphalt; tiered mesh count for Medium ~60 FPS.
+ */
+function addTunnelEntranceRocks(
+  root: THREE.Group,
+  pts: TrackData['points'],
+  entranceFrac: number,
+  quality: QualityProfile,
+): void {
+  const total = pts[pts.length - 1]?.s || 1;
+  const entranceS = total * entranceFrac;
+  const idx = findIndexAtS(pts, entranceS);
+  const a = pts[idx];
+  const b = pts[Math.min(pts.length - 1, idx + 1)];
+  const yaw = Math.atan2(b.x - a.x, b.z - a.z);
+  // Landward side of tunnel mouth (+lateral along yaw normal)
+  const side = 1;
+  const nx = Math.cos(yaw) * side;
+  const nz = -Math.sin(yaw) * side;
+
+  const group = new THREE.Group();
+  group.name = 'tunnel-entrance-rocks';
+
+  const rockMat = quality.useLambertScenery
+    ? new THREE.MeshLambertMaterial({ color: 0x6e6a62 })
+    : new THREE.MeshStandardMaterial({ color: 0x6e6a62, roughness: 0.92, metalness: 0.05 });
+  const darkMat = quality.useLambertScenery
+    ? new THREE.MeshLambertMaterial({ color: 0x4a4842 })
+    : new THREE.MeshStandardMaterial({ color: 0x4a4842, roughness: 0.95, metalness: 0.04 });
+  const scrubMat = quality.useLambertScenery
+    ? new THREE.MeshLambertMaterial({ color: 0x3a6a34 })
+    : new THREE.MeshStandardMaterial({ color: 0x3a6a34, roughness: 0.9 });
+
+  // Tier: ultra/low fewer chunks; medium+ full landmark
+  const chunks =
+    quality.maxDecor >= 30 ? 9 : quality.maxDecor >= 20 ? 7 : quality.maxDecor >= 12 ? 5 : 3;
+
+  const baseOff = a.width * 0.5 + quality.sceneryMargin + 6;
+  for (let i = 0; i < chunks; i++) {
+    const along = (i - (chunks - 1) * 0.5) * 4.2;
+    const out = baseOff + (i % 3) * 2.8 + (i % 2) * 1.4;
+    const px = a.x + Math.sin(yaw) * along + nx * out;
+    const pz = a.z + Math.cos(yaw) * along + nz * out;
+    if (intersectsRoadRibbon(pts, px, pz, 5.5, quality.sceneryMargin + 1.5)) continue;
+    const gy = sampleTerrainHeight(pts, px, pz);
+    if (!acceptPropY(pts, px, pz, gy, 2.5)) continue;
+
+    const sx = 5.5 + (i % 4) * 1.6;
+    const sy = 4.2 + (i % 5) * 1.35 + (i === 0 ? 3.5 : 0);
+    const sz = 4.8 + ((i + 1) % 3) * 1.4;
+    const geo =
+      i % 3 === 0
+        ? new THREE.DodecahedronGeometry(1, quality.treeDetail >= 6 ? 1 : 0)
+        : i % 3 === 1
+          ? new THREE.IcosahedronGeometry(1, quality.treeDetail >= 6 ? 1 : 0)
+          : new THREE.BoxGeometry(1, 1, 1);
+    const mesh = new THREE.Mesh(geo, i % 2 === 0 ? rockMat : darkMat);
+    mesh.position.set(px, gy + sy * 0.42, pz);
+    mesh.scale.set(sx, sy, sz);
+    mesh.rotation.set(0.15 * (i % 3), yaw + i * 0.35, 0.08 * (i % 2));
+    mesh.castShadow = quality.sceneryCastShadow;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+
+    // Cliff shelf lip on the biggest chunks (readable silhouette)
+    if (i < 3 && quality.maxDecor >= 14) {
+      const lip = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), darkMat);
+      lip.position.set(px - nx * 1.2, gy + sy * 0.85, pz - nz * 1.2);
+      lip.scale.set(sx * 0.75, Math.max(1.2, sy * 0.22), sz * 0.7);
+      lip.rotation.y = yaw + 0.2;
+      lip.castShadow = quality.sceneryCastShadow;
+      group.add(lip);
+    }
+
+    // Sparse scrub on ledges — Medium+
+    if (quality.maxDecor >= 20 && i % 2 === 0) {
+      const scrub = new THREE.Mesh(
+        new THREE.ConeGeometry(0.9, 1.2, Math.max(5, quality.treeDetail)),
+        scrubMat,
+      );
+      scrub.position.set(px + nx * 0.8, gy + sy * 0.78, pz + nz * 0.8);
+      scrub.scale.set(1.4, 1.1, 1.4);
+      group.add(scrub);
+    }
+  }
+
+  // Tall landmark boulder closest to portal (always, if clear)
+  const lx = a.x + nx * (baseOff + 2.5);
+  const lz = a.z + nz * (baseOff + 2.5);
+  if (!intersectsRoadRibbon(pts, lx, lz, 6, quality.sceneryMargin + 2)) {
+    const gy = sampleTerrainHeight(pts, lx, lz);
+    if (acceptPropY(pts, lx, lz, gy, 2.5)) {
+      const landmark = new THREE.Mesh(
+        new THREE.DodecahedronGeometry(1, quality.treeDetail >= 6 ? 1 : 0),
+        rockMat,
+      );
+      landmark.position.set(lx, gy + 5.2, lz);
+      landmark.scale.set(9.5, 11.5, 8.5);
+      landmark.rotation.set(0.2, yaw + 0.6, -0.12);
+      landmark.castShadow = quality.sceneryCastShadow;
+      landmark.receiveShadow = true;
+      landmark.name = 'tunnel-portal-boulder';
+      group.add(landmark);
+    }
+  }
+
+  root.add(group);
+}
+
 function addTunnel(
   root: THREE.Group,
   pts: TrackData['points'],
@@ -1597,10 +1708,13 @@ function addScenery(
     }
   }
 
-  // Rock outcrops + low green shrubs — NO blue/white/pink cubes on asphalt
+  // Rock outcrops + shrubs + flower beds + low cliff slabs — tiered by maxDecor
   const rocks: Xform[] = [];
   const shrubs: Xform[] = [];
-  const rockStride = Math.max(16, strideM * 2.4);
+  const flowers: Xform[] = [];
+  const cliffs: Xform[] = [];
+  const flowerColors = [0xc45a6a, 0xd4a03a, 0x6a8cc4, 0xc4783a];
+  const rockStride = Math.max(14, strideM * 2.1);
   let nextRockS = 10;
   let decorCount = 0;
   for (let i = 0; i < pts.length - 1 && decorCount < quality.maxDecor; i++) {
@@ -1609,8 +1723,8 @@ function addScenery(
     const useLeft = i % 2 === 0;
     const edge = useLeft ? left : right;
     const side = useLeft ? -1 : 1;
-    // Extra margin so decor never sits on ribbon / Tecpro
-    if (i % 2 === 0) {
+    const mode = i % 4;
+    if (mode === 0) {
       const placed = placeAlongEdgeNormal(pts, edge, i, side, 1.2, margin + 2.5, 4 + (i % 3));
       if (placed && acceptPropY(pts, placed.x, placed.z, placed.y)) {
         const { clearance } = nearestEdgeClearance(pts, placed.x, placed.z);
@@ -1623,7 +1737,7 @@ function addScenery(
         });
         decorCount++;
       }
-    } else {
+    } else if (mode === 1) {
       const placed = placeAlongEdgeNormal(pts, edge, i, side, 0.9, margin + 2.0, 3.5);
       if (placed && acceptPropY(pts, placed.x, placed.z, placed.y)) {
         const { clearance } = nearestEdgeClearance(pts, placed.x, placed.z);
@@ -1632,6 +1746,33 @@ function addScenery(
           x: placed.x, y: placed.y + 0.35, z: placed.z,
           sx: 0.9 + (i % 3) * 0.15, sy: 0.7, sz: 0.9 + (i % 2) * 0.1,
           rotY: (i % 5) * 0.5,
+        });
+        decorCount++;
+      }
+    } else if (mode === 2 && quality.maxDecor >= 20) {
+      const placed = placeAlongEdgeNormal(pts, edge, i, side, 1.0, margin + 2.2, 3.2);
+      if (placed && acceptPropY(pts, placed.x, placed.z, placed.y)) {
+        const { clearance } = nearestEdgeClearance(pts, placed.x, placed.z);
+        if (clearance < BARRIER_OUT + margin + 1.3) continue;
+        flowers.push({
+          x: placed.x, y: placed.y + 0.22, z: placed.z,
+          sx: 1.6 + (i % 3) * 0.25, sy: 0.35, sz: 1.1,
+          rotY: Math.atan2(placed.nx, placed.nz),
+          color: flowerColors[i % flowerColors.length],
+        });
+        decorCount++;
+      }
+    } else if (mode === 3 && quality.maxDecor >= 24) {
+      if ((pts[i].y ?? 0) < 3.5) continue;
+      const placed = placeAlongEdgeNormal(pts, edge, i, side, 2.2, margin + 3.5, 5 + (i % 2));
+      if (placed && acceptPropY(pts, placed.x, placed.z, placed.y)) {
+        const { clearance } = nearestEdgeClearance(pts, placed.x, placed.z);
+        if (clearance < BARRIER_OUT + margin + 2.5) continue;
+        const ch = 2.8 + (i % 4) * 0.9;
+        cliffs.push({
+          x: placed.x, y: placed.y + ch * 0.45, z: placed.z,
+          sx: 3.5 + (i % 3), sy: ch, sz: 1.6 + (i % 2) * 0.4,
+          rotY: Math.atan2(placed.nx, placed.nz),
         });
         decorCount++;
       }
@@ -1684,10 +1825,16 @@ function addScenery(
 
   const rockMat = makeSceneryMat(0x6a6860, quality);
   const shrubMat = makeSceneryMat(0x2e6a32, quality);
+  const flowerMat = makeSceneryMat(0xffffff, quality);
+  const cliffMat = makeSceneryMat(0x5c584f, quality);
   const rockGeo = new THREE.DodecahedronGeometry(0.7, 0);
   const shrubGeo = new THREE.ConeGeometry(0.85, 1.1, Math.max(5, detail));
+  const flowerGeo = new THREE.BoxGeometry(1, 1, 1);
+  const cliffGeo = new THREE.BoxGeometry(1, 1, 1);
   addInstanced(rockGeo, rockMat, rocks, false);
   addInstanced(shrubGeo, shrubMat, shrubs, false);
+  addInstanced(flowerGeo, flowerMat, flowers, true);
+  addInstanced(cliffGeo, cliffMat, cliffs, false);
 
   root.add(group);
 }

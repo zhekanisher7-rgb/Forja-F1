@@ -440,13 +440,16 @@ export function sampleTerrainHeight(pts: TrackPoint[], x: number, z: number): nu
     }
   }
 
-  // Procedural hills + harbor bias (cheap, no textures)
+  // Procedural hills / cliffs / harbor (cheap, no extra draw calls)
   const hill =
     Math.sin(x * 0.011) * Math.cos(z * 0.009) * 2.2 +
-    Math.sin(x * 0.0045 + z * 0.0065) * 3.5;
+    Math.sin(x * 0.0045 + z * 0.0065) * 3.5 +
+    Math.sin(x * 0.023 - z * 0.017) * 1.15;
   const casino = Math.max(0, 1 - Math.hypot(x - 370, z - 500) / 220) * 9;
+  // Rocky rise around Monaco tunnel mouth (Portier → tunnel)
+  const tunnelCliff = Math.max(0, 1 - Math.hypot(x - 400, z - 160) / 95) * 7.5;
   const quayZone = x > 120 && z < 80 && z > -140;
-  let base = Math.max(-0.4, hill * 0.45 + casino);
+  let base = Math.max(-0.4, hill * 0.45 + casino + tunnelCliff * 0.85);
   if (quayZone) {
     // Harbor flat / quay level — props sit on quay, not floating over water
     const quay = 0.35;

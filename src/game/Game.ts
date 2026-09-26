@@ -32,6 +32,11 @@ import { ResultsScreen } from '../ui/Results';
 import { getLivery, type Livery } from '../vehicles/Liveries';
 import { createAIGrid, updateAICar, type AICar } from '../ai/AIDriver';
 import { resolveFieldCollisions } from '../physics/CarCollision';
+import {
+  computeRacePosition,
+  selfVerifyRaceStanding,
+  type RacerStanding,
+} from './RaceStanding';
 
 type Phase = 'menu' | 'countdown' | 'racing' | 'finished';
 
@@ -122,6 +127,9 @@ export class Game {
     app.appendChild(this.countdownEl);
 
     window.addEventListener('resize', () => this.onResize());
+
+    // Documented scenario: behind 2 AI on same lap → P3 (throws on regression)
+    selfVerifyRaceStanding();
   }
 
   private applyGraphicsFromMenu(g: GraphicsSettings): void {
@@ -381,19 +389,35 @@ export class Game {
     }
   }
 
+  private toStanding(v: VehicleState): RacerStanding {
+    return {
+      lap: v.lap,
+      distanceAlong: v.distanceAlong,
+      finished: v.finished,
+      finishTimeMs: v.finished ? v.finishTimeMs : undefined,
+    };
+  }
+
+  /**
+   * Live / results position: lap primary, s-distance secondary.
+   * Finished cars use finishTimeMs so Results matches true order
+   * (crossing S/F must not jump a car ahead of those who finished earlier).
+   */
   private getPlayerPosition(): number {
     if (!this.vehicle) return 1;
     if (this.aiCars.length === 0) return 1;
-    let pos = 1;
-    const pProg = this.raceProgress(this.vehicle);
-    for (const ai of this.aiCars) {
-      if (this.raceProgress(ai.vehicle) > pProg) pos++;
-    }
-    return pos;
+    return computeRacePosition(
+      this.toStanding(this.vehicle),
+      this.aiCars.map((ai) => this.toStanding(ai.vehicle)),
+      this.track.length,
+    );
   }
 
-  private raceProgress(v: VehicleState): number {
-    return (v.lap - 1) * this.track.length + v.distanceAlong;
+  /** Mark car finished exactly once; stamp race clock for order. */
+  private markFinished(v: VehicleState): void {
+    if (v.finished) return;
+    v.finished = true;
+    v.finishTimeMs = this.raceTimeMs;
   }
 
   private updateCountdown(dt: number): void {
@@ -508,6 +532,7 @@ export class Game {
       this.progressSinceLap = 0;
       this.crossedStart = false; // re-arm only after leaving S/F zone
       if (this.vehicle.lap > this.totalLaps) {
+        this.markFinished(this.vehicle);
         this.finishRace();
       }
     }
@@ -546,6 +571,9 @@ export class Game {
           ai.vehicle.lap += 1;
           this.aiProgressSinceLap[i] = 0;
           this.aiLapArmed[i] = false;
+          if (ai.vehicle.lap > this.totalLaps) {
+            this.markFinished(ai.vehicle);
+          }
         }
       }
     }
@@ -573,7 +601,7 @@ export class Game {
   private finishRace(): void {
     if (!this.vehicle) return;
     this.phase = 'finished';
-    this.vehicle.finished = true;
+    this.markFinished(this.vehicle);
     this.hud.hide();
     this.results.show({
       totalTimeMs: this.raceTimeMs,

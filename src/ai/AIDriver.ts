@@ -242,11 +242,10 @@ export function createAIGrid(
     { skill: 0.42, aggression: 0.25, liveryId: pool[3] ?? 'williams' },
   ];
 
-  // Grid: player at s=5; AI truly behind (lower s, wrapped) on alternate sides
-  const len = track.length;
+  // Grid: player at s=5; AI behind on the SAME straight (lower s, NO wrap past S/F).
+  // Wrapping to length-ε made raw s rank AI ahead of the leader at lights-out.
   return configs.map((cfg, i) => {
-    const behind = 5 - (i + 1) * 10;
-    const startS = ((behind % len) + len) % len;
+    const startS = Math.max(0.6, 5 - (i + 1) * 6.5);
     return createAICar(
       `ai${i}`,
       cfg,
