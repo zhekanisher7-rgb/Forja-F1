@@ -36,20 +36,22 @@ export interface PitLaneSpec {
   apronExtra: number;
 }
 
+/** Enlarged spur + longer mouths so peel-off / boxes read clearly (race centerline untouched). */
 export const PIT_LANE: PitLaneSpec = {
-  entryBeforeSf: 88,
-  exitAfterSf: 68,
-  entryOpenLen: 32,
-  exitOpenLen: 30,
-  width: 7.5,
+  entryBeforeSf: 105,
+  exitAfterSf: 82,
+  entryOpenLen: 44,
+  exitOpenLen: 40,
+  width: 9.5,
   gapFromRaceEdge: 0.55,
-  boxStartS: 12,
-  boxEndS: 46,
-  hintLateralFrac: 0.2,
-  boxLateralFrac: 0.58,
+  boxStartS: 8,
+  boxEndS: 58,
+  hintLateralFrac: 0.18,
+  boxLateralFrac: 0.52,
   stopSpeed: 7,
   hintSpeedMax: 48,
-  apronExtra: 12,
+  // ~ barrier + gap + width + garage margin
+  apronExtra: 15.5,
 };
 
 export function isPitCorridorS(s: number, trackLen: number, spec: PitLaneSpec = PIT_LANE): boolean {

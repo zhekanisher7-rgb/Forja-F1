@@ -2413,6 +2413,29 @@ function addScenery(
 }
 
 
+
+/** Flat «ПИТ» board texture (RU) — yellow field, dark lettering. */
+function makePitSignTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 128;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#f0c410';
+  ctx.fillRect(0, 0, 256, 128);
+  ctx.strokeStyle = '#1a1a1e';
+  ctx.lineWidth = 10;
+  ctx.strokeRect(6, 6, 244, 116);
+  ctx.fillStyle = '#1a1a1e';
+  ctx.font = 'bold 72px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('ПИТ', 128, 68);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
 /** Clean pit ENTRY/EXIT spur — parallel add-on outside right Tecpro; race ribbon untouched. */
 function addPitLane(
   root: THREE.Group,
@@ -2432,10 +2455,23 @@ function addPitLane(
     ? new THREE.MeshLambertMaterial({ color: 0x34343b })
     : new THREE.MeshStandardMaterial({ color: 0x34343b, roughness: 0.9, metalness: 0.05 });
   const dashMat = new THREE.MeshBasicMaterial({ color: 0xf2ecd4 });
-  const entryPaintMat = new THREE.MeshBasicMaterial({
-    color: 0xe8e0c0,
+  // High-contrast yellow + white entry paint on race asphalt
+  const entryYellowMat = new THREE.MeshBasicMaterial({
+    color: 0xf0c410,
     transparent: true,
-    opacity: 0.92,
+    opacity: 0.96,
+    depthWrite: false,
+  });
+  const entryWhiteMat = new THREE.MeshBasicMaterial({
+    color: 0xf7f4ea,
+    transparent: true,
+    opacity: 0.95,
+    depthWrite: false,
+  });
+  const arrowMat = new THREE.MeshBasicMaterial({
+    color: 0xffe14a,
+    transparent: true,
+    opacity: 0.97,
     depthWrite: false,
   });
   const boxMat = quality.useLambertScenery
@@ -2445,6 +2481,21 @@ function addPitLane(
   const barrierMat = quality.useLambertScenery
     ? new THREE.MeshLambertMaterial({ color: 0xc8c8d0 })
     : new THREE.MeshStandardMaterial({ color: 0xc8c8d0, roughness: 0.55, metalness: 0.15 });
+  const mouthKerbMat = quality.useLambertScenery
+    ? new THREE.MeshLambertMaterial({ color: 0xf0c410 })
+    : new THREE.MeshStandardMaterial({ color: 0xf0c410, roughness: 0.55, metalness: 0.05 });
+  const mouthKerbAltMat = quality.useLambertScenery
+    ? new THREE.MeshLambertMaterial({ color: 0xf6f6fa })
+    : new THREE.MeshStandardMaterial({ color: 0xf6f6fa, roughness: 0.55, metalness: 0.05 });
+  const pitSignTex = makePitSignTexture();
+  const pitSignMat = new THREE.MeshBasicMaterial({
+    map: pitSignTex,
+    transparent: true,
+    depthWrite: false,
+  });
+  const postMat = quality.useLambertScenery
+    ? new THREE.MeshLambertMaterial({ color: 0x2a2a30 })
+    : new THREE.MeshStandardMaterial({ color: 0x2a2a30, roughness: 0.7, metalness: 0.2 });
 
   // Ordered s samples wrapping S/F (entry → SF → exit) — independent of mitered race edges
   const step = 2.4;
@@ -2508,7 +2559,7 @@ function addPitLane(
   const addConnector = (fromS: number, toS: number, towardPit: boolean) => {
     const cInner: THREE.Vector3[] = [];
     const cOuter: THREE.Vector3[] = [];
-    const samples = 8;
+    const samples = 10;
     for (let i = 0; i <= samples; i++) {
       const t = i / samples;
       const s =
@@ -2523,10 +2574,10 @@ function addPitLane(
       // Blend lateral from race edge to pit inner
       const pitLat = raceEdge + TRACK_BARRIER_OUT + spec.gapFromRaceEdge;
       const blend = towardPit ? t : 1 - t;
-      const lat0 = raceEdge * 0.92;
+      const lat0 = raceEdge * 0.88;
       const lat1 = pitLat;
       const latA = lat0 + (lat1 - lat0) * blend;
-      const latB = latA + 1.8 + blend * (spec.width * 0.55);
+      const latB = latA + 2.2 + blend * (spec.width * 0.62);
       cInner.push(
         new THREE.Vector3(
           samp.x + nx * latA,
@@ -2565,29 +2616,76 @@ function addPitLane(
       x: (a.x + b.x) * 0.5,
       y: a.y + 0.14,
       z: (a.z + b.z) * 0.5,
-      sx: 0.28,
+      sx: 0.32,
       sy: 0.04,
-      sz: Math.min(2.2, seg * 0.8),
+      sz: Math.min(2.4, seg * 0.85),
       rotY: a.yaw,
     });
   }
 
-  // White dashed entry paint on race asphalt (inside opening only)
-  const paintXforms: typeof dashXforms = [];
-  const entryPaintStart = total - spec.entryOpenLen;
-  for (let s = entryPaintStart; s < total - 2; s += 3.0) {
+  // Longer / wider dashed entry paint on race asphalt (starts before Tecpro mouth)
+  const yellowPaint: typeof dashXforms = [];
+  const whitePaint: typeof dashXforms = [];
+  const entryPaintLead = 28; // meters before opening start
+  const entryPaintStart = total - spec.entryOpenLen - entryPaintLead;
+  let paintIdx = 0;
+  for (let s = entryPaintStart; s < total - 1.2; s += 2.35) {
     const samp = sampleTrack(pts, s);
     const nx = Math.cos(samp.yaw);
     const nz = -Math.sin(samp.yaw);
-    const lat = samp.width * 0.28;
-    paintXforms.push({
-      x: samp.x + nx * lat,
-      y: samp.y + 0.12,
-      z: samp.z + nz * lat,
-      sx: 0.32,
-      sy: 0.05,
-      sz: 2.0,
+    // Double row toward right edge — yellow outer, white inner
+    const latWhite = samp.width * 0.22;
+    const latYellow = samp.width * 0.36;
+    const y = samp.y + 0.13;
+    whitePaint.push({
+      x: samp.x + nx * latWhite,
+      y,
+      z: samp.z + nz * latWhite,
+      sx: 0.48,
+      sy: 0.055,
+      sz: 2.55,
       rotY: samp.yaw,
+    });
+    yellowPaint.push({
+      x: samp.x + nx * latYellow,
+      y,
+      z: samp.z + nz * latYellow,
+      sx: 0.55,
+      sy: 0.055,
+      sz: 2.7,
+      rotY: samp.yaw,
+    });
+    // Chevron / arrow every ~3rd dash inside the mouth
+    if (s >= total - spec.entryOpenLen && paintIdx % 3 === 0) {
+      const latArr = samp.width * 0.3;
+      yellowPaint.push({
+        x: samp.x + nx * latArr,
+        y: y + 0.01,
+        z: samp.z + nz * latArr,
+        sx: 1.15,
+        sy: 0.05,
+        sz: 0.85,
+        rotY: samp.yaw + Math.PI * 0.22, // angled toward right peel-off
+      });
+    }
+    paintIdx++;
+  }
+
+  // Ground chevrons pointing into the spur at the mouth
+  const arrowXforms: typeof dashXforms = [];
+  for (let s = total - spec.entryOpenLen + 4; s < total - 4; s += 7.5) {
+    const samp = sampleTrack(pts, s);
+    const nx = Math.cos(samp.yaw);
+    const nz = -Math.sin(samp.yaw);
+    const lat = samp.width * 0.42;
+    arrowXforms.push({
+      x: samp.x + nx * lat,
+      y: samp.y + 0.14,
+      z: samp.z + nz * lat,
+      sx: 1.6,
+      sy: 0.06,
+      sz: 1.1,
+      rotY: samp.yaw + Math.PI * 0.28,
     });
   }
 
@@ -2609,29 +2707,81 @@ function addPitLane(
     group.add(mesh);
   };
   addInst(dashXforms, dashMat, false);
-  addInst(paintXforms, entryPaintMat, false);
+  addInst(whitePaint, entryWhiteMat, false);
+  addInst(yellowPaint, entryYellowMat, false);
+  addInst(arrowXforms, arrowMat, false);
 
-  // Garage boxes along outer spur (box zone only)
+  // Bright yellow/white mouth kerbs along right race edge at entry opening
+  const mouthKerbsY: typeof dashXforms = [];
+  const mouthKerbsW: typeof dashXforms = [];
+  let kerbFlip = false;
+  for (let s = total - spec.entryOpenLen; s < total - 1; s += 1.65) {
+    const samp = sampleTrack(pts, s);
+    const nx = Math.cos(samp.yaw);
+    const nz = -Math.sin(samp.yaw);
+    const lat = samp.width * 0.5 + 0.35;
+    const xf = {
+      x: samp.x + nx * lat,
+      y: samp.y + 0.16,
+      z: samp.z + nz * lat,
+      sx: 0.95,
+      sy: 0.18,
+      sz: 1.45,
+      rotY: samp.yaw,
+    };
+    if (kerbFlip) mouthKerbsW.push(xf);
+    else mouthKerbsY.push(xf);
+    kerbFlip = !kerbFlip;
+  }
+  addInst(mouthKerbsY, mouthKerbMat, false);
+  addInst(mouthKerbsW, mouthKerbAltMat, false);
+
+  // «ПИТ» sign boards + posts near entry mouth (outside race asphalt)
+  const signSlots = [
+    total - spec.entryOpenLen - 6,
+    total - spec.entryOpenLen * 0.55,
+    total - 8,
+  ];
+  for (const s of signSlots) {
+    const samp = sampleTrack(pts, ((s % total) + total) % total);
+    const nx = Math.cos(samp.yaw);
+    const nz = -Math.sin(samp.yaw);
+    const lat = samp.width * 0.5 + TRACK_BARRIER_OUT + 1.1;
+    const px = samp.x + nx * lat;
+    const pz = samp.z + nz * lat;
+    if (intersectsRoadRibbon(pts, px, pz, 0.8, 0.6)) continue;
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.18, 2.4, 0.18), postMat);
+    post.position.set(px, samp.y + 1.2, pz);
+    post.castShadow = quality.sceneryCastShadow;
+    group.add(post);
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.2), pitSignMat);
+    board.position.set(px - nx * 0.12, samp.y + 2.35, pz - nz * 0.12);
+    board.rotation.y = samp.yaw + Math.PI; // face oncoming traffic
+    board.renderOrder = 4;
+    group.add(board);
+  }
+
+  // Garage boxes along outer spur (longer box zone, bigger stalls)
   const boxXforms: typeof dashXforms = [];
   const roofXforms: typeof dashXforms = [];
   let nextBox = -1;
   for (const p of spur) {
     if (p.s < spec.boxStartS || p.s > spec.boxEndS) continue;
     if (p.s < nextBox) continue;
-    nextBox = p.s + 7.2;
+    nextBox = p.s + 8.4;
     const nx = Math.cos(p.yaw);
     const nz = -Math.sin(p.yaw);
-    const bx = p.x + nx * (halfPit + 3.6);
-    const bz = p.z + nz * (halfPit + 3.6);
-    if (intersectsRoadRibbon(pts, bx, bz, 3.2, quality.sceneryMargin)) continue;
+    const bx = p.x + nx * (halfPit + 4.4);
+    const bz = p.z + nz * (halfPit + 4.4);
+    if (intersectsRoadRibbon(pts, bx, bz, 3.8, quality.sceneryMargin)) continue;
     if (!acceptPropY(pts, bx, bz, p.y, 2.4)) continue;
     boxXforms.push({
-      x: bx, y: p.y + 1.55, z: bz,
-      sx: 6.0, sy: 3.0, sz: 3.8, rotY: p.yaw,
+      x: bx, y: p.y + 1.85, z: bz,
+      sx: 7.4, sy: 3.6, sz: 4.6, rotY: p.yaw,
     });
     roofXforms.push({
-      x: bx, y: p.y + 3.2, z: bz,
-      sx: 6.6, sy: 0.22, sz: 4.2, rotY: p.yaw,
+      x: bx, y: p.y + 3.8, z: bz,
+      sx: 8.2, sy: 0.26, sz: 5.2, rotY: p.yaw,
     });
   }
   addInst(boxXforms, boxMat, true);
@@ -2645,12 +2795,12 @@ function addPitLane(
     nextWall = p.s + 5.2;
     const nx = Math.cos(p.yaw);
     const nz = -Math.sin(p.yaw);
-    const wx = p.x + nx * (halfPit + 0.45);
-    const wz = p.z + nz * (halfPit + 0.45);
+    const wx = p.x + nx * (halfPit + 0.5);
+    const wz = p.z + nz * (halfPit + 0.5);
     if (intersectsRoadRibbon(pts, wx, wz, 0.5, 0.4)) continue;
     wallXforms.push({
-      x: wx, y: p.y + 0.55, z: wz,
-      sx: 0.26, sy: 1.0, sz: 3.8, rotY: p.yaw,
+      x: wx, y: p.y + 0.6, z: wz,
+      sx: 0.28, sy: 1.1, sz: 4.2, rotY: p.yaw,
     });
   }
   addInst(wallXforms, barrierMat, false);
