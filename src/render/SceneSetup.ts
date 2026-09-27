@@ -155,7 +155,7 @@ export function makeEnvCubemap(
 function addSkyDome(scene: THREE.Scene, weather: WeatherState, night: boolean): THREE.Mesh {
   const wet = weather.type === 'wet';
   const tex = makeSkyTexture(wet, night);
-  const geo = new THREE.SphereGeometry(900, 32, 16);
+  const geo = new THREE.SphereGeometry(1600, 32, 16);
   geo.scale(-1, 1, 1);
   const mat = new THREE.MeshBasicMaterial({ map: tex, depthWrite: false });
   const dome = new THREE.Mesh(geo, mat);
@@ -174,7 +174,7 @@ export function createScene(
   const p = profileFor(tier);
   // Cool Mediterranean haze — slightly desaturated blue
   const fogColor = night ? 0x0a1528 : weather.type === 'wet' ? 0x5a6578 : 0x8ab4d8;
-  scene.fog = new THREE.Fog(fogColor, night ? 45 : p.fogNear, night ? 220 : p.fogFar);
+  scene.fog = new THREE.Fog(fogColor, night ? 55 : p.fogNear, night ? 320 : p.fogFar);
   scene.background = new THREE.Color(fogColor);
   scene.environment = makeEnvCubemap(weather.type === 'wet', night, p.envMapSize);
 
@@ -256,8 +256,8 @@ export function applyWeatherVisuals(
   if (scene.fog && (scene.fog as THREE.Fog).isFog) {
     const f = scene.fog as THREE.Fog;
     f.color.set(fogColor);
-    f.near = night ? 45 : p.fogNear;
-    f.far = night ? 220 : p.fogFar;
+    f.near = night ? 55 : p.fogNear;
+    f.far = night ? 320 : p.fogFar;
   }
   scene.environment = makeEnvCubemap(weather.type === 'wet', night, p.envMapSize);
 
@@ -314,7 +314,7 @@ export function applyGraphicsTier(
   (scene.userData as { tier?: GraphicsTier }).tier = tier;
   const night = !!(scene.userData as { night?: boolean }).night;
   if (scene.fog && (scene.fog as THREE.Fog).isFog) {
-    (scene.fog as THREE.Fog).near = night ? 45 : p.fogNear;
-    (scene.fog as THREE.Fog).far = night ? 220 : p.fogFar;
+    (scene.fog as THREE.Fog).near = night ? 55 : p.fogNear;
+    (scene.fog as THREE.Fog).far = night ? 320 : p.fogFar;
   }
 }

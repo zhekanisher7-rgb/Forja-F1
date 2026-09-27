@@ -31,7 +31,7 @@ import { HUD } from '../ui/HUD';
 import { TutorialOverlay } from '../ui/Tutorial';
 import { ResultsScreen } from '../ui/Results';
 import { getLivery, type Livery } from '../vehicles/Liveries';
-import { createAIGrid, updateAICar, type AICar } from '../ai/AIDriver';
+import { createAIGrid, updateAICar, PLAYER_GRID_S, type AICar } from '../ai/AIDriver';
 import { resolveFieldCollisions } from '../physics/CarCollision';
 import {
   computeRacePosition,
@@ -250,11 +250,15 @@ export class Game {
     this.carMesh = createCarMesh(livery, { castShadow, racingNumber: 1 });
     this.scene.add(this.carMesh);
 
-    const start = sampleTrack(this.track.points, 5);
-    this.vehicle = createVehicleState(start.x, start.z, start.yaw, settings.tires);
+    // Pole (left): same S as AI grid reference — AI rows sit behind on the straight
+    const start = sampleTrack(this.track.points, PLAYER_GRID_S);
+    const poleLat = -0.72 * (start.width * 0.32);
+    const px = start.x + Math.cos(start.yaw) * poleLat;
+    const pz = start.z - Math.sin(start.yaw) * poleLat;
+    this.vehicle = createVehicleState(px, pz, start.yaw, settings.tires);
     this.vehicle.y = start.y;
     this.vehicle.pitch = start.pitch;
-    this.vehicle.distanceAlong = 5;
+    this.vehicle.distanceAlong = PLAYER_GRID_S;
     this.vehicle.lap = 1;
     this.vehicle.currentLapMs = 0;
 
@@ -294,7 +298,7 @@ export class Game {
 
     this.raceTimeMs = 0;
     this.aiAccum = 0;
-    this.lastS = 5;
+    this.lastS = PLAYER_GRID_S;
     this.crossedStart = false;
     this.progressSinceLap = 0;
     this.aiProgressSinceLap = this.aiCars.map(() => 0);
@@ -557,8 +561,10 @@ export class Game {
     if (this.aiAccum >= aiInterval) {
       const aiDt = Math.min(0.08, this.aiAccum);
       this.aiAccum = 0;
+      const raceAge = this.raceTimeMs / 1000;
       for (let i = 0; i < this.aiCars.length; i++) {
         const ai = this.aiCars[i];
+        ai.raceAgeSec = raceAge;
         const prevS = ai.vehicle.distanceAlong;
         updateAICar(ai, this.track, aiDt);
         const ns = ai.vehicle.distanceAlong;

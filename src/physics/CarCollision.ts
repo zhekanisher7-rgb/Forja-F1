@@ -1,12 +1,15 @@
 /**
  * Simple arcade car–car hitboxes (circle approx of F1 footprint).
- * Separates overlapping cars, slows on contact, light bounce — no ghosting.
+ * Separates overlapping cars, mild bounce — no ghosting, no mutual freeze.
  * Player power/mass are NEVER reduced by AI presence (damageMul stays mode-identical).
  */
 import type { VehicleState } from './VehiclePhysics';
 
 /** Approx half-width / collision radius (tub ~1.8 m wide, nose/length folded in) */
 export const CAR_HIT_RADIUS = 1.55;
+
+/** Soft floor so bumps cannot leave cars at walking pace */
+const MIN_POST_HIT_SPEED = 6.5;
 
 export type ResolvePairOpts = {
   /** When true, skip damage on `a` (player) so AI contact cannot nerf maxPower. */
@@ -34,8 +37,8 @@ export function resolveCarPair(a: VehicleState, b: VehicleState, opts?: ResolveP
     a.z -= nz * CAR_HIT_RADIUS;
     b.x += nx * CAR_HIT_RADIUS;
     b.z += nz * CAR_HIT_RADIUS;
-    a.speed *= 0.9;
-    b.speed *= 0.9;
+    a.speed = Math.max(Math.abs(a.speed) * 0.92, MIN_POST_HIT_SPEED) * Math.sign(a.speed || 1);
+    b.speed = Math.max(Math.abs(b.speed) * 0.92, MIN_POST_HIT_SPEED) * Math.sign(b.speed || 1);
     return 0.5;
   }
 
@@ -43,11 +46,12 @@ export function resolveCarPair(a: VehicleState, b: VehicleState, opts?: ResolveP
   const nz = dz / dist;
   const overlap = minDist - dist;
 
-  // Separate evenly so neither ghosts through
-  a.x -= nx * overlap * 0.5;
-  a.z -= nz * overlap * 0.5;
-  b.x += nx * overlap * 0.5;
-  b.z += nz * overlap * 0.5;
+  // Separate evenly so neither ghosts through (slightly stronger push to unstick)
+  const sep = overlap * 0.55;
+  a.x -= nx * sep;
+  a.z -= nz * sep;
+  b.x += nx * sep;
+  b.z += nz * sep;
 
   // Closing speed along contact normal (positive = approaching)
   const avx = Math.sin(a.yaw) * a.speed;
@@ -57,29 +61,38 @@ export function resolveCarPair(a: VehicleState, b: VehicleState, opts?: ResolveP
   const closing = (avx - bvx) * nx + (avz - bvz) * nz;
 
   let impact = Math.min(1, overlap / CAR_HIT_RADIUS);
+  const playerProtect = opts?.protectA === true;
+
   if (closing > 0.5) {
     impact = Math.min(1, impact + closing / 40);
-    // Arcade bounce: scrub closing speed (milder on protected player)
-    const playerProtect = opts?.protectA === true;
-    const bleed = Math.min(playerProtect ? 0.35 : 0.55, closing * (playerProtect ? 0.008 : 0.012));
-    a.speed *= (playerProtect ? 0.88 : 0.78) - bleed * 0.12;
-    b.speed *= 0.78 - bleed * 0.15;
-    // Nudge yaw away from contact so cars don\'t stick parallel
-    const yawKick = 0.05 * Math.min(1, closing / 25);
+    // Mild arcade bounce — keep cars moving; never scrub to a crawl
+    const bleed = Math.min(playerProtect ? 0.22 : 0.32, closing * (playerProtect ? 0.005 : 0.007));
+    const aMul = (playerProtect ? 0.94 : 0.88) - bleed * 0.08;
+    const bMul = 0.88 - bleed * 0.1;
+    const aKeep = Math.max(Math.abs(a.speed) * aMul, Math.min(Math.abs(a.speed), MIN_POST_HIT_SPEED));
+    const bKeep = Math.max(Math.abs(b.speed) * bMul, Math.min(Math.abs(b.speed), MIN_POST_HIT_SPEED));
+    a.speed = aKeep * Math.sign(a.speed || 1);
+    b.speed = bKeep * Math.sign(b.speed || 1);
+    // Nudge yaw away from contact so cars don't stick parallel
+    const yawKick = 0.06 * Math.min(1, closing / 25);
     const aSide = Math.sign(Math.cos(a.yaw) * nx - Math.sin(a.yaw) * nz) || 1;
     const bSide = Math.sign(Math.cos(b.yaw) * nx - Math.sin(b.yaw) * nz) || 1;
     a.yaw -= aSide * yawKick;
     b.yaw += bSide * yawKick;
     // Damage only on AI / unprotected cars — never cut player maxPower via damageMul
     if (!playerProtect) {
-      a.damage = Math.min(1, a.damage + impact * 0.035);
+      a.damage = Math.min(1, a.damage + impact * 0.022);
     }
-    b.damage = Math.min(1, b.damage + impact * 0.035);
+    b.damage = Math.min(1, b.damage + impact * 0.022);
   } else {
-    // Side-rub / already separating — light scrub (was 0.96/frame = huge QR nerf in traffic)
-    const playerProtect = opts?.protectA === true;
-    a.speed *= playerProtect ? 0.99 : 0.97;
-    b.speed *= 0.97;
+    // Side-rub / already separating — very light scrub (was 0.96–0.97/frame = freeze in traffic)
+    a.speed *= playerProtect ? 0.995 : 0.99;
+    b.speed *= 0.99;
+    // Still enforce a gentle floor if both nearly stopped while interlocking
+    if (Math.abs(a.speed) < MIN_POST_HIT_SPEED * 0.5 && Math.abs(b.speed) < MIN_POST_HIT_SPEED * 0.5) {
+      a.speed = Math.max(Math.abs(a.speed), MIN_POST_HIT_SPEED * 0.55) * Math.sign(a.speed || 1);
+      b.speed = Math.max(Math.abs(b.speed), MIN_POST_HIT_SPEED * 0.55) * Math.sign(b.speed || 1);
+    }
   }
 
   return impact;

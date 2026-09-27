@@ -28,6 +28,10 @@ export interface AICar {
   /** lateral offset from center (−1..1 of half-width) */
   lineBias: number;
   lookAhead: number;
+  /** Grid slot index (0..) — used to stagger launch targets */
+  gridIndex: number;
+  /** Seconds since lights-out; set by Game each frame */
+  raceAgeSec: number;
 }
 
 const emptyInput = (): InputState => ({
@@ -64,10 +68,11 @@ export function createAICar(
   lateralBias: number,
   weather: WeatherState,
   castShadow: boolean,
+  gridIndex = 0,
 ): AICar {
   const sample = sampleTrack(track.points, startS);
-  // Offset laterally from center
-  const lat = lateralBias * (sample.width * 0.28);
+  // Offset laterally from center — keep clear of sister grid slot
+  const lat = lateralBias * (sample.width * 0.32);
   const x = sample.x + Math.cos(sample.yaw) * lat;
   const z = sample.z - Math.sin(sample.yaw) * lat;
 
@@ -99,21 +104,29 @@ export function createAICar(
     vehicle,
     mesh,
     physics,
-    lineBias: lateralBias * 0.35,
+    lineBias: lateralBias * 0.4,
     lookAhead: 14 + config.skill * 10,
+    gridIndex,
+    raceAgeSec: 0,
   };
 }
 
 export function updateAICar(ai: AICar, track: TrackData, dt: number): void {
   const v = ai.vehicle;
   const skill = ai.config.skill;
+  const launch = ai.raceAgeSec < 4.5;
+  const launchT = Math.max(0, 1 - ai.raceAgeSec / 4.5);
 
-  const targetS = v.distanceAlong + ai.lookAhead;
+  // Stagger look-ahead / line so cars don't dive into the same apex off the line
+  const staggerLat =
+    (ai.gridIndex % 2 === 0 ? -1 : 1) * (0.18 + ai.gridIndex * 0.06) * launchT;
+  const staggerLook = ai.gridIndex * 2.2 * launchT;
+
+  const targetS = v.distanceAlong + ai.lookAhead + staggerLook;
   const target = sampleTrack(track.points, targetS);
   const near = sampleTrack(track.points, v.distanceAlong + 4);
 
-  // Desired point with line bias (racing line = slight inside on exits)
-  const latOff = ai.lineBias * near.width * 0.4;
+  const latOff = (ai.lineBias + staggerLat) * near.width * 0.42;
   const tx = target.x + Math.cos(target.yaw) * latOff;
   const tz = target.z - Math.sin(target.yaw) * latOff;
 
@@ -125,16 +138,26 @@ export function updateAICar(ai: AICar, track: TrackData, dt: number): void {
   while (yawErr < -Math.PI) yawErr += Math.PI * 2;
 
   const curv = curvatureAhead(track, v.distanceAlong, skill);
-  // Target speed from curvature — skill raises ceiling
+  // Target speed from curvature — skill raises ceiling; softer during launch
   const baseMax = 48 + skill * 22; // m/s ~170–250 km/h
   const cornerMax = Math.max(12, baseMax * (1 - Math.min(0.85, curv * 2.8)));
   const speed = Math.abs(v.speed);
 
   const input = emptyInput();
-  // Steer — proportional; positive yawErr (need right) → positive steer → +yaw.
-  input.steer = Math.max(-1, Math.min(1, yawErr * (1.6 + skill * 0.8)));
+  // Steer — proportional; dial down aggression in first seconds
+  const steerGain = launch ? 1.1 + skill * 0.35 : 1.6 + skill * 0.8;
+  input.steer = Math.max(-1, Math.min(1, yawErr * steerGain));
 
-  if (speed > cornerMax + 2) {
+  if (launch && speed < 28) {
+    // Lights-out: prioritise clean acceleration, light brake only if way too fast into kink
+    if (speed > cornerMax + 8) {
+      input.brake = Math.min(0.35, (speed - cornerMax) * 0.06);
+      input.throttle = 0.35;
+    } else {
+      input.throttle = Math.min(1, 0.88 + skill * 0.12);
+      input.brake = 0;
+    }
+  } else if (speed > cornerMax + 2) {
     input.brake = Math.min(1, (speed - cornerMax) * 0.12);
     input.throttle = 0;
   } else if (speed > cornerMax) {
@@ -217,6 +240,11 @@ function projectS(
   return best;
 }
 
+/** Player grid S — AI slots sit behind on the same straight (no wrap past S/F). */
+export const PLAYER_GRID_S = 36;
+/** Longitudinal gap between consecutive grid rows (m along track). */
+const GRID_ROW_GAP = 9.5;
+
 /** Spawn 4 AI opponents with staggered grid slots */
 export function createAIGrid(
   track: TrackData,
@@ -242,18 +270,23 @@ export function createAIGrid(
     { skill: 0.42, aggression: 0.25, liveryId: pool[3] ?? 'williams' },
   ];
 
-  // Grid: player at s=5; AI behind on the SAME straight (lower s, NO wrap past S/F).
-  // Wrapping to length-ε made raw s rank AI ahead of the leader at lights-out.
+  // F1-style 2-wide grid behind the player. Player is pole (left) at PLAYER_GRID_S.
+  // Slot i → one car length+ behind previous; alternate left/right.
+  // IMPORTANT: never clamp all AI onto the same s (old Math.max(0.6, …) stacked them).
   return configs.map((cfg, i) => {
-    const startS = Math.max(0.6, 5 - (i + 1) * 6.5);
+    const row = i + 1; // 1..4 behind pole
+    const startS = Math.max(1.5, PLAYER_GRID_S - row * GRID_ROW_GAP);
+    // Odd rows start right of center, even left — clears the pole lane
+    const lateral = row % 2 === 1 ? 0.78 : -0.78;
     return createAICar(
       `ai${i}`,
       cfg,
       track,
       startS,
-      i % 2 === 0 ? -0.85 : 0.85,
+      lateral,
       weather,
       castShadow,
+      i,
     );
   });
 }

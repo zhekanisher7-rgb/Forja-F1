@@ -211,9 +211,17 @@ function makeBuildingFacadeTexture(): THREE.CanvasTexture {
   c.width = 128;
   c.height = 256;
   const ctx = c.getContext('2d')!;
-  // Warm Mediterranean plaster
+  // Warm Mediterranean plaster (slight tint variance baked into base)
   ctx.fillStyle = '#a89888';
   ctx.fillRect(0, 0, 128, 256);
+  // Ground-floor shop / door band
+  ctx.fillStyle = '#7a6a58';
+  ctx.fillRect(0, 200, 128, 56);
+  ctx.fillStyle = '#3a3028';
+  ctx.fillRect(48, 214, 32, 42);
+  ctx.fillStyle = 'rgba(255,220,160,0.35)';
+  ctx.fillRect(12, 218, 22, 28);
+  ctx.fillRect(94, 218, 22, 28);
   // Floor cornice bands
   for (const y of [64, 128, 192]) {
     ctx.fillStyle = '#8a7868';
@@ -624,7 +632,8 @@ function addGround(root: THREE.Group, pts: TrackData['points'], quality: Quality
     minZ = Math.min(minZ, p.z - pad);
     maxZ = Math.max(maxZ, p.z + pad);
   }
-  const margin = 160;
+  // Far apron so camera never sees a hard terrain cliff / black void past the ribbon
+  const margin = 480;
   const gw = maxX - minX + margin * 2;
   const gd = maxZ - minZ + margin * 2;
   const cx = (minX + maxX) / 2;
@@ -633,7 +642,7 @@ function addGround(root: THREE.Group, pts: TrackData['points'], quality: Quality
   // Gently varying heightfield following track corridor + hills / harbor
   // Medium: ~72 segs (~5k verts) — cheap enough for 60 FPS; High/Ultra denser cliffs
   const segs =
-    quality.sceneryStep >= 5 ? 48 : quality.sceneryStep >= 3 ? 72 : quality.treeDetail >= 8 ? 128 : 108;
+    quality.sceneryStep >= 5 ? 56 : quality.sceneryStep >= 3 ? 80 : quality.treeDetail >= 8 ? 140 : 112;
   const geo = new THREE.PlaneGeometry(gw, gd, segs, segs);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
@@ -816,13 +825,15 @@ function addOverpassSupports(
   const minClear = PILLAR_HALF + PILLAR_MARGIN;
 
   let nextPillarS = -1e9;
-  const pillarSpacing = 9;
+  const pillarSpacing = 10;
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i];
     if (a.s < nextPillarS) continue;
     const b = pts[i + 1];
     const midY = (a.y + b.y) * 0.5;
-    if (midY < 4.2) continue;
+    // Pillars only under real overpasses / high decks — avoids orphan columns on climb ramps
+    if (midY < 5.5) continue;
+    if (!crossingIdx.has(i) && midY < 8.5) continue;
     nextPillarS = a.s + pillarSpacing;
     const mx = (a.x + b.x) * 0.5;
     const mz = (a.z + b.z) * 0.5;
@@ -1968,11 +1979,11 @@ function addScenery(
 
     // --- Buildings: far offset, large half-extent ---
     if (ii % 2 === 0 && bCount < quality.maxBuildings) {
-      const h = 10 + (i % 7) * 2.8;
-      const w = 5 + (i % 4);
-      const d = 5 + ((i + 2) % 4);
+      const h = 8 + (i % 9) * 2.4 + (i % 3) * 1.1;
+      const w = 4.5 + (i % 5) * 1.15;
+      const d = 4.5 + ((i + 2) % 5) * 1.05;
       const halfToward = Math.max(w, d) * 0.5;
-      const extra = 2 + (i % 4) * 1.5;
+      const extra = 2.5 + (i % 5) * 1.6;
       const placed = placeAlongEdgeNormal(pts, edge, i, side, halfToward, margin, extra);
       if (placed && acceptPropY(pts, placed.x, placed.z, placed.y)) {
         const rotY = Math.atan2(placed.nx, placed.nz);
@@ -1993,10 +2004,10 @@ function addScenery(
           y: placed.y + h + 0.55,
           z: placed.z,
           sx: w * 0.78,
-          sy: 1.1 + (i % 3) * 0.15,
+          sy: 1.15 + (i % 4) * 0.18,
           sz: d * 0.78,
           rotY: rotY + Math.PI / 4,
-          color: 0x5a4030,
+          color: (i % 3 === 0) ? 0x4a3020 : 0x5a4030,
         });
         plinths.push({
           x: placed.x,
@@ -2008,12 +2019,40 @@ function addScenery(
           rotY,
           color: 0x6a6058,
         });
+        // Occasional side wing / chimney stack for silhouette variety
+        if (i % 5 === 0 && bCount + 1 < quality.maxBuildings) {
+          const wingW = w * 0.45;
+          const wingD = d * 0.55;
+          const wingH = h * (0.55 + (i % 2) * 0.15);
+          const ox = placed.nx * (w * 0.55 + 0.8);
+          const oz = placed.nz * (w * 0.55 + 0.8);
+          buildings.push({
+            x: placed.x + ox,
+            y: placed.y + wingH / 2,
+            z: placed.z + oz,
+            sx: wingW,
+            sy: wingH,
+            sz: wingD,
+            rotY,
+            color: bldgColors[(i + 3) % bldgColors.length],
+          });
+          roofs.push({
+            x: placed.x + ox,
+            y: placed.y + wingH + 0.4,
+            z: placed.z + oz,
+            sx: wingW * 0.8,
+            sy: 0.9,
+            sz: wingD * 0.8,
+            rotY: rotY + Math.PI / 4,
+            color: 0x4a3020,
+          });
+        }
         bCount++;
       }
     }
 
-    // --- Trees / palms / deciduous bushes: closer but still clear of barriers ---
-    if (ii % 3 !== 0 && tCount < quality.maxTrees) {
+    // --- Trees / palms / deciduous bushes: denser bands clear of barriers ---
+    if (ii % 5 !== 1 && tCount < quality.maxTrees) {
       const isPalm = ii % 5 === 1;
       const isBush = !isPalm && ii % 7 === 3;
       const isPine = !isPalm && !isBush && ii % 2 === 0;
@@ -2108,13 +2147,32 @@ function addScenery(
     }
   }
 
-  // Distant Monaco hillside blocks — sit ON terrain heightfield
-  // Spread across casino hills, tunnel cliffs, and harbor-side slopes
+  // Distant hillside / village clusters — track-relative so Suzuka/Interlagos fill too.
+  // Monaco keeps a few iconic casino/tunnel anchors mixed in.
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const p of pts) {
+    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+    minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+  }
+  const midX = (minX + maxX) * 0.5;
+  const midZ = (minZ + maxZ) * 0.5;
+  const spanX = Math.max(80, maxX - minX);
+  const spanZ = Math.max(80, maxZ - minZ);
   const clusterSites: [number, number][] = [
-    [320, 420], [375, 490], [290, 450], [410, 380],
-    [430, 200], [360, 140], [450, 110], // tunnel / Portier cliffs
-    [180, 280], [250, 330], [100, 250], // Beau Rivage climb
-    [300, -40], [160, -90], [340, -100], // harbor hinterland (off asphalt)
+    [midX + spanX * 0.42, midZ + spanZ * 0.38],
+    [midX - spanX * 0.40, midZ + spanZ * 0.35],
+    [midX + spanX * 0.38, midZ - spanZ * 0.42],
+    [midX - spanX * 0.36, midZ - spanZ * 0.38],
+    [midX + spanX * 0.55, midZ + spanZ * 0.05],
+    [midX - spanX * 0.52, midZ - spanZ * 0.08],
+    [midX + spanX * 0.12, midZ + spanZ * 0.55],
+    [midX - spanX * 0.08, midZ - spanZ * 0.52],
+    [midX + spanX * 0.48, midZ + spanZ * 0.48],
+    [midX - spanX * 0.45, midZ + spanZ * 0.50],
+    [midX + spanX * 0.50, midZ - spanZ * 0.28],
+    [midX - spanX * 0.48, midZ - spanZ * 0.32],
+    // Monaco iconic anchors (harmless extras on other tracks if off-ribbon)
+    [320, 420], [375, 490], [430, 200], [180, 280], [300, -40],
   ];
   const clusters = Math.max(2, quality.hillsideClusters);
   for (let c = 0; c < clusters; c++) {

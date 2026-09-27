@@ -489,11 +489,11 @@ export function sampleTerrainHeight(pts: TrackPoint[], x: number, z: number, mon
   const lx = x - cx;
   const lz = z - cz;
   const hill =
-    Math.sin(lx * 0.011) * Math.cos(lz * 0.009) * 2.55 +
-    Math.sin(lx * 0.0045 + lz * 0.0065) * 4.1 +
-    Math.sin(lx * 0.023 - lz * 0.017) * 1.45 +
-    Math.sin(lx * 0.038 + lz * 0.029) * Math.cos(lz * 0.021) * 0.85;
-  let base = Math.max(-0.4, hill * 0.48);
+    Math.sin(lx * 0.011) * Math.cos(lz * 0.009) * 3.1 +
+    Math.sin(lx * 0.0045 + lz * 0.0065) * 4.8 +
+    Math.sin(lx * 0.023 - lz * 0.017) * 1.85 +
+    Math.sin(lx * 0.038 + lz * 0.029) * Math.cos(lz * 0.021) * 1.15;
+  let base = Math.max(-0.35, hill * 0.55);
   if (monacoLandmarks) {
     const casinoDist = Math.hypot(x - 370, z - 500);
     const casino = Math.max(0, 1 - casinoDist / 220) * 9.8;
@@ -524,11 +524,15 @@ export function sampleTerrainHeight(pts: TrackPoint[], x: number, z: number, mon
       base = Math.max(base, hill * 0.18) + bankLip * (1 - towardWater * 0.6);
     }
   } else {
-    // Gentle ridge near high parts of the ribbon
+    // Gentle berms / rolling hills around the circuit (Suzuka / Interlagos)
     const ridge =
-      Math.max(0, 1 - Math.hypot(lx, lz) / 280) *
-      (2.8 + Math.sin(lx * 0.028) * 1.2 + Math.cos(lz * 0.022) * 1.0);
-    base = Math.max(-0.4, hill * 0.55 + ridge);
+      Math.max(0, 1 - Math.hypot(lx, lz) / 320) *
+      (3.6 + Math.sin(lx * 0.028) * 1.5 + Math.cos(lz * 0.022) * 1.25);
+    const berm =
+      Math.sin(lx * 0.007 + lz * 0.009) * 2.4 +
+      Math.cos(lx * 0.013 - lz * 0.011) * 1.8 +
+      Math.sin((lx + lz) * 0.019) * 1.1;
+    base = Math.max(-0.35, hill * 0.72 + ridge + berm * 0.55);
   }
 
   if (!found) return base;
