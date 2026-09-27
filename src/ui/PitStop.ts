@@ -184,35 +184,3 @@ export class PitStopUI {
     });
   }
 }
-
-/** Shared pit corridor along start/finish — right side of track. */
-export const PIT_ZONE = {
-  /** Along-track window near S/F (m from start, wraps) */
-  nearStartMax: 55,
-  nearEndMinFrac: 0.92,
-  /** Lateral: toward right (positive) as fraction of half-width */
-  lateralMinFrac: 0.28,
-  /** Max speed to open pit UI (m/s) ≈ 25 km/h */
-  stopSpeed: 7,
-  /** Hint when near entry (wider) */
-  hintLateralFrac: 0.12,
-  hintSpeedMax: 45,
-} as const;
-
-export function inPitApproach(
-  s: number,
-  trackLen: number,
-  lateral: number,
-  halfW: number,
-  speed: number,
-): { near: boolean; inBox: boolean } {
-  const nearS =
-    s <= PIT_ZONE.nearStartMax || s >= trackLen * PIT_ZONE.nearEndMinFrac;
-  if (!nearS) return { near: false, inBox: false };
-  const latOk = lateral >= halfW * PIT_ZONE.hintLateralFrac;
-  const boxLat = lateral >= halfW * PIT_ZONE.lateralMinFrac;
-  const spd = Math.abs(speed);
-  const near = latOk && spd < PIT_ZONE.hintSpeedMax;
-  const inBox = boxLat && spd <= PIT_ZONE.stopSpeed;
-  return { near, inBox };
-}

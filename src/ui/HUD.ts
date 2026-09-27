@@ -52,6 +52,7 @@ export class HUD {
       <div class="fuel-empty-hint" id="fuel-empty">НЕТ ТОПЛИВА</div>
       <div class="racing-line-hint hidden" id="line-hint">● ГОНОЧНАЯ ЛИНИЯ</div>
       <div class="pit-hint" id="pit-hint">Пит</div>
+      <div class="mandatory-pit" id="mandatory-pit">Обязательный пит</div>
       <div class="bar-row hud-damage" style="display:none"><span>УРОН</span><div class="bar-track"><div class="bar-fill damage" id="bar-damage"></div></div><span id="dmg-pct">0%</span></div>
     `;
     this.minimap = this.el.querySelector('#minimap') as HTMLCanvasElement;
@@ -87,6 +88,7 @@ export class HUD {
   hide(): void {
     this.el.classList.add('hidden');
     this.setPitHint(false);
+    this.setMandatoryPit(false, 1, false, false);
   }
 
   /** Near pit entry — show «Пит» cue */
@@ -96,6 +98,30 @@ export class HUD {
     el.classList.toggle('show', show);
     el.classList.toggle('inbox', inBox);
     el.textContent = inBox ? 'Пит · остановитесь' : 'Пит';
+  }
+
+  /**
+   * Mandatory pit HUD (Quick Race / Tutorial).
+   * active && !done → show countdown; warn on last allowed lap.
+   */
+  setMandatoryPit(
+    active: boolean,
+    deadlineLap: number,
+    done: boolean,
+    warnLastLap: boolean,
+  ): void {
+    const el = this.el.querySelector('#mandatory-pit') as HTMLElement | null;
+    if (!el) return;
+    if (!active || done) {
+      el.classList.remove('show', 'warn', 'done');
+      return;
+    }
+    el.classList.add('show');
+    el.classList.toggle('warn', warnLastLap);
+    el.classList.remove('done');
+    el.textContent = warnLastLap
+      ? `Последний круг для пит-стопа! (до круга ${deadlineLap})`
+      : `Обязательный пит до круга ${deadlineLap}`;
   }
 
   update(

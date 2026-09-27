@@ -33,7 +33,13 @@ import { ResultsScreen } from '../ui/Results';
 import { getLivery, type Livery } from '../vehicles/Liveries';
 import { createAIGrid, updateAICar, PLAYER_GRID_S, DEFAULT_OPPONENT_COUNT, type AICar } from '../ai/AIDriver';
 import { resolveFieldCollisions } from '../physics/CarCollision';
-import { PitStopUI, inPitApproach } from '../ui/PitStop';
+import { PitStopUI } from '../ui/PitStop';
+import {
+  inPitApproach,
+  pitApronAllowance,
+  mandatoryPitDeadlineLap,
+  modeHasMandatoryPit,
+} from '../tracks/PitLane';
 import {
   computeRacePosition,
   selfVerifyRaceStanding,
@@ -58,6 +64,11 @@ export class Game {
   private pitBusy = false;
   /** Seconds before another pit entry is allowed (prevents re-open loop). */
   private pitCooldown = 0;
+  /** Player completed a full pit mini-game this race (mandatory rule). */
+  private mandatoryPitDone = false;
+  /** Lap by which mandatory pit must be completed (inclusive). */
+  private mandatoryPitDeadline = 2;
+  private mandatoryPitActive = false;
 
   private track: TrackData = getTrackById('monaco');
   private trackRoot: THREE.Group | null = null;
@@ -197,6 +208,9 @@ export class Game {
     this.physics = null;
     this.pitBusy = false;
     this.pitStop.close();
+    this.mandatoryPitDone = false;
+    this.mandatoryPitActive = false;
+    this.hud.setMandatoryPit(false, 1, false, false);
   }
 
   private disposeObject(obj: THREE.Object3D): void {
@@ -281,6 +295,15 @@ export class Game {
     this.pitBusy = false;
     this.pitCooldown = 0;
     this.pitStop.close();
+    this.mandatoryPitActive = modeHasMandatoryPit(settings.mode);
+    this.mandatoryPitDone = false;
+    this.mandatoryPitDeadline = mandatoryPitDeadlineLap(this.totalLaps);
+    this.hud.setMandatoryPit(
+      this.mandatoryPitActive,
+      this.mandatoryPitDeadline,
+      false,
+      false,
+    );
 
     // AI opponents (skip in time-trial solo focus? keep them for quick/tutorial)
     if (settings.mode !== 'timetrial') {
@@ -310,6 +333,7 @@ export class Game {
     );
     this.hud.setShowFps(this.graphics.showFps);
     this.hud.show();
+    this.refreshMandatoryPitHud();
 
     this.raceTimeMs = 0;
     this.aiAccum = 0;
@@ -504,7 +528,7 @@ export class Game {
     );
     const halfW = proj.width / 2;
 
-    // Pit approach / box — right side near S/F; hint + optional entry
+    // Dedicated pit lane zone (right-side corridor wrapping S/F)
     const pit = inPitApproach(
       proj.s,
       this.track.length,
@@ -523,9 +547,13 @@ export class Game {
       return;
     }
 
-    // Hard clamp at Tecpro face — allow extra apron on right in pit corridor
-    const pitApron =
-      proj.s <= 55 || proj.s >= this.track.length * 0.92 ? 6.5 : 0;
+    // Apron only at pit entry/exit mouths or when already in the spur
+    const pitApron = pitApronAllowance(
+      proj.s,
+      this.track.length,
+      proj.lateral,
+      halfW,
+    );
     const clamped = applyTrackBarrierClamp(
       this.vehicle.x,
       this.vehicle.z,
@@ -595,6 +623,15 @@ export class Game {
       this.vehicle.lap += 1;
       this.progressSinceLap = 0;
       this.crossedStart = false; // re-arm only after leaving S/F zone
+      this.refreshMandatoryPitHud();
+      if (
+        this.mandatoryPitActive &&
+        !this.mandatoryPitDone &&
+        this.vehicle.lap > this.mandatoryPitDeadline
+      ) {
+        this.disqualifyRace('Нет обязательного пит-стопа до круга ' + this.mandatoryPitDeadline);
+        return;
+      }
       if (this.vehicle.lap > this.totalLaps) {
         this.markFinished(this.vehicle);
         this.finishRace();
@@ -640,9 +677,48 @@ export class Game {
       if (result.fuel) {
         this.vehicle.fuel = Math.min(1, this.vehicle.fuel + 0.55);
       }
+      // Full mini-game completion satisfies mandatory pit
+      if (result.tires && result.damage && result.fuel) {
+        this.mandatoryPitDone = true;
+        this.refreshMandatoryPitHud();
+      }
       this.pitBusy = false;
       this.pitCooldown = 8; // leave the box before re-entry
       this.hud.setPitHint(false);
+    });
+  }
+
+  private refreshMandatoryPitHud(): void {
+    if (!this.vehicle) return;
+    const onDeadlineLap =
+      this.mandatoryPitActive &&
+      !this.mandatoryPitDone &&
+      this.vehicle.lap === this.mandatoryPitDeadline;
+    this.hud.setMandatoryPit(
+      this.mandatoryPitActive && !this.mandatoryPitDone,
+      this.mandatoryPitDeadline,
+      this.mandatoryPitDone,
+      onDeadlineLap,
+    );
+  }
+
+  private disqualifyRace(reason: string): void {
+    if (!this.vehicle) return;
+    this.phase = 'finished';
+    this.markFinished(this.vehicle);
+    this.pitBusy = false;
+    this.pitStop.close();
+    this.hud.hide();
+    this.results.show({
+      totalTimeMs: this.raceTimeMs,
+      bestLapMs: this.vehicle.bestLapMs,
+      lapsCompleted: Math.max(0, this.vehicle.lap - 1),
+      damage: this.vehicle.damage,
+      tireWear: this.vehicle.tires.wear,
+      position: this.getPlayerPosition(),
+      fieldSize: 1 + this.aiCars.length,
+      disqualified: true,
+      dqReason: reason,
     });
   }
 

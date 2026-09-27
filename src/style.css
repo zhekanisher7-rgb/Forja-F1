@@ -502,6 +502,24 @@ canvas#game-canvas {
   min-width: 320px;
 }
 
+.results-card.dq h2 {
+  color: #e10600;
+}
+.results-dq {
+  margin: 0.4rem 0 1rem;
+  padding: 0.65rem 0.9rem;
+  background: rgba(225, 6, 0, 0.15);
+  border: 1px solid rgba(225, 6, 0, 0.45);
+  border-radius: 6px;
+  color: #ffb4b0;
+  font-size: 0.95rem;
+  text-align: center;
+  line-height: 1.35;
+}
+.results-stat .value.dq {
+  color: #e10600;
+  letter-spacing: 0.15em;
+}
 .results-card h2 {
   font-family: var(--font-display);
   font-size: 1.8rem;
@@ -617,6 +635,35 @@ canvas#game-canvas {
   border-color: rgba(0, 210, 190, 0.7);
   box-shadow: 0 0 14px rgba(0, 210, 190, 0.35);
   animation: fuelPulse 0.9s ease-in-out infinite alternate;
+}
+
+.mandatory-pit {
+  position: absolute;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  letter-spacing: 0.12em;
+  color: #ffe08a;
+  background: rgba(20, 12, 0, 0.78);
+  border: 1px solid rgba(255, 200, 80, 0.5);
+  padding: 0.35rem 1rem;
+  border-radius: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+  z-index: 6;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.mandatory-pit.show { opacity: 1; }
+.mandatory-pit.warn {
+  color: #fff;
+  border-color: rgba(225, 6, 0, 0.75);
+  background: rgba(60, 8, 8, 0.85);
+  box-shadow: 0 0 16px rgba(225, 6, 0, 0.4);
+  animation: fuelPulse 0.85s ease-in-out infinite alternate;
 }
 
 .bar-fill.damage { background: linear-gradient(90deg, #2ecc71, #f1c40f, #e10600); }

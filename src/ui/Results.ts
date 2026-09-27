@@ -6,6 +6,9 @@ export interface RaceResult {
   tireWear: number;
   position?: number;
   fieldSize?: number;
+  /** Disqualification (e.g. missed mandatory pit) */
+  disqualified?: boolean;
+  dqReason?: string;
 }
 
 function fmt(ms: number): string {
@@ -31,10 +34,19 @@ export class ResultsScreen {
   show(result: RaceResult): void {
     const pos = result.position ?? 1;
     const field = result.fieldSize ?? 1;
+    const dq = !!result.disqualified;
+    const title = dq ? '⛔ ДИСКВАЛИФИКАЦИЯ' : '🏁 ФИНИШ';
+    const dqBlock = dq
+      ? `<div class="results-dq">${result.dqReason ?? 'Нарушение регламента'}</div>`
+      : '';
+    const posBlock = dq
+      ? `<div class="results-stat"><span class="label">СТАТУС</span><span class="value dq">DQ</span></div>`
+      : `<div class="results-stat"><span class="label">ПОЗИЦИЯ</span><span class="value">${pos} / ${field}</span></div>`;
     this.el.innerHTML = `
-      <div class="results-card">
-        <h2>🏁 ФИНИШ</h2>
-        <div class="results-stat"><span class="label">ПОЗИЦИЯ</span><span class="value">${pos} / ${field}</span></div>
+      <div class="results-card${dq ? ' dq' : ''}">
+        <h2>${title}</h2>
+        ${dqBlock}
+        ${posBlock}
         <div class="results-stat"><span class="label">ОБЩЕЕ ВРЕМЯ</span><span class="value">${fmt(result.totalTimeMs)}</span></div>
         <div class="results-stat"><span class="label">ЛУЧШИЙ КРУГ</span><span class="value">${fmt(result.bestLapMs)}</span></div>
         <div class="results-stat"><span class="label">КРУГОВ</span><span class="value">${result.lapsCompleted}</span></div>

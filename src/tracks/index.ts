@@ -29,3 +29,14 @@ export function getTrackById(id: string): TrackData {
 }
 
 export { createMonacoTrack, createSuzukaTrack, createInterlagosTrack };
+
+export {
+  PIT_LANE,
+  inPitApproach,
+  pitApronAllowance,
+  mandatoryPitDeadlineLap,
+  modeHasMandatoryPit,
+  isPitCorridorS,
+  isPitTecproGap,
+} from './PitLane';
+export type { PitLaneSpec } from './PitLane';

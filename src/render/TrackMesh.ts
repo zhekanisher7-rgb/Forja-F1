@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import type { TrackData, TrackPoint } from '../tracks/Track';
-import { getTrackEdges, sampleTerrainHeight, TRACK_BARRIER_OUT } from '../tracks/Track';
+import { getTrackEdges, sampleTerrainHeight, sampleTrack, TRACK_BARRIER_OUT } from '../tracks/Track';
+import {
+  PIT_LANE,
+  isPitCorridorS,
+  isPitTecproGap,
+} from '../tracks/PitLane';
 
 /** Set per createTrackMesh — Monaco casino/tunnel hills vs generic ribbon terrain. */
 let _monacoLandmarks = false;
@@ -1236,6 +1241,14 @@ function addTecproBarriers(
       along += Math.hypot(wallBase[i + 1].x - wallBase[i].x, wallBase[i + 1].z - wallBase[i].z);
       continue;
     }
+    // Dedicated pit entry/exit — open right Tecpro into pit strip
+    if (
+      isPitTecproGap(s0, total, side) ||
+      isPitTecproGap(s1, total, side)
+    ) {
+      along += Math.hypot(wallBase[i + 1].x - wallBase[i].x, wallBase[i + 1].z - wallBase[i].z);
+      continue;
+    }
     const a = wallBase[i];
     const b = wallBase[i + 1];
     // Collapsed miter pulls the edge inward — wall would sit mid-asphalt
@@ -1352,6 +1365,8 @@ function addSponsorBoards(
     if (s > total - skipM) break;
     nextS = s + spacing;
     if (hasCoplanarForeignRibbon(pts, i)) continue;
+    // Keep pit corridor free of boards (right-side pit strip)
+    if (side > 0 && isPitCorridorS(s, total)) continue;
 
     const p = boardBase[i];
     let dx = boardBase[i + 1].x - boardBase[i - 1].x;
@@ -1864,7 +1879,7 @@ function placeAlongEdgeNormal(
 }
 
 /** Drop props whose base Y is not near terrain (floating / buried). */
-function acceptPropY(pts: TrackPoint[], x: number, z: number, baseY: number, tol = 1.25): boolean {
+function acceptPropY(pts: TrackPoint[], x: number, z: number, baseY: number, tol = 1.05): boolean {
   const gy = terrainH(pts, x, z);
   return Math.abs(baseY - gy) <= tol;
 }
@@ -1972,11 +1987,14 @@ function addScenery(
     }
   }
 
+  const trackLenS = pts[pts.length - 1]?.s || 1;
   for (let ii = 0; ii < indices.length; ii++) {
     const i = indices[ii];
     const useLeft = ii % 2 === 0;
     const edge = useLeft ? left : right;
     const side = useLeft ? -1 : 1;
+    // Keep dedicated pit strip clear of buildings / trees / lamps
+    if (side > 0 && isPitCorridorS(pts[i].s, trackLenS)) continue;
 
     // --- Buildings: far offset, large half-extent (denser on Medium+) ---
     const bldgEvery = quality.maxBuildings >= 100 ? 1 : 2;
@@ -2228,6 +2246,7 @@ function addScenery(
     const useLeft = i % 2 === 0;
     const edge = useLeft ? left : right;
     const side = useLeft ? -1 : 1;
+    if (side > 0 && isPitCorridorS(pts[i].s, trackLenS)) continue;
     const mode = quality.maxDecor >= 56 ? i % 5 : i % 4;
     if (mode === 0) {
       const placed = placeAlongEdgeNormal(pts, edge, i, side, 1.2, margin + 2.5, 4 + (i % 3));
@@ -2394,7 +2413,7 @@ function addScenery(
 }
 
 
-/** Pit lane / boxes strip near S/F (right side) — shared across tracks lacking pit geometry. */
+/** Clean pit ENTRY/EXIT spur — parallel add-on outside right Tecpro; race ribbon untouched. */
 function addPitLane(
   root: THREE.Group,
   pts: TrackPoint[],
@@ -2406,71 +2425,178 @@ function addPitLane(
   const group = new THREE.Group();
   group.name = 'pitLane';
   const total = pts[pts.length - 1].s;
+  const spec = PIT_LANE;
+  if (total < spec.entryBeforeSf + spec.exitAfterSf + 20) return;
+
   const asphaltMat = quality.useLambertScenery
-    ? new THREE.MeshLambertMaterial({ color: 0x3a3a42 })
-    : new THREE.MeshStandardMaterial({ color: 0x3a3a42, roughness: 0.92, metalness: 0.05 });
-  const lineMat = new THREE.MeshBasicMaterial({ color: 0xe8e0c8 });
+    ? new THREE.MeshLambertMaterial({ color: 0x34343b })
+    : new THREE.MeshStandardMaterial({ color: 0x34343b, roughness: 0.9, metalness: 0.05 });
+  const dashMat = new THREE.MeshBasicMaterial({ color: 0xf2ecd4 });
+  const entryPaintMat = new THREE.MeshBasicMaterial({
+    color: 0xe8e0c0,
+    transparent: true,
+    opacity: 0.92,
+    depthWrite: false,
+  });
   const boxMat = quality.useLambertScenery
-    ? new THREE.MeshLambertMaterial({ color: 0x5a6068 })
-    : new THREE.MeshStandardMaterial({ color: 0x5a6068, roughness: 0.85, metalness: 0.1 });
-  const roofMat = makeSceneryMat(0xb02020, quality);
+    ? new THREE.MeshLambertMaterial({ color: 0x4e545c })
+    : new THREE.MeshStandardMaterial({ color: 0x4e545c, roughness: 0.85, metalness: 0.1 });
+  const roofMat = makeSceneryMat(0xb01818, quality);
+  const barrierMat = quality.useLambertScenery
+    ? new THREE.MeshLambertMaterial({ color: 0xc8c8d0 })
+    : new THREE.MeshStandardMaterial({ color: 0xc8c8d0, roughness: 0.55, metalness: 0.15 });
 
-  const inPitS = (s: number) => s <= 58 || s >= total * 0.91;
-  const dummy = new THREE.Object3D();
-  const apronXforms: { x: number; y: number; z: number; sx: number; sy: number; sz: number; rotY: number }[] = [];
-  const boxXforms: typeof apronXforms = [];
-  const roofXforms: typeof apronXforms = [];
+  // Ordered s samples wrapping S/F (entry → SF → exit) — independent of mitered race edges
+  const step = 2.4;
+  const sList: number[] = [];
+  for (let s = total - spec.entryBeforeSf; s < total; s += step) sList.push(Math.min(s, total - 0.05));
+  for (let s = 0; s <= spec.exitAfterSf; s += step) sList.push(s);
+  if (sList.length < 4) return;
 
-  let next = 0;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const p = pts[i];
-    if (!inPitS(p.s)) continue;
-    if (p.s + 1e-3 < next) continue;
-    next = p.s + 4.2;
-    // Place apron outside right Tecpro — never on racing asphalt
-    const halfToward = 2.2;
-    const placed = placeAlongEdgeNormal(pts, right, i, 1, halfToward, quality.sceneryMargin * 0.35, 1.2);
-    if (!placed) continue;
-    if (!acceptPropY(pts, placed.x, placed.z, placed.y, 1.5)) continue;
-    const rotY = Math.atan2(placed.nx, placed.nz);
-    apronXforms.push({
-      x: placed.x,
-      y: placed.y + 0.04,
-      z: placed.z,
-      sx: 5.5,
-      sy: 0.08,
-      sz: 3.8,
-      rotY,
+  type SpurPt = { x: number; y: number; z: number; yaw: number; s: number; halfW: number };
+  const raw: SpurPt[] = [];
+  for (const s of sList) {
+    const samp = sampleTrack(pts, s);
+    const halfW = samp.width * 0.5;
+    // Right-hand normal (same convention as projectOnTrack lateral+)
+    const nx = Math.cos(samp.yaw);
+    const nz = -Math.sin(samp.yaw);
+    const offset = halfW + TRACK_BARRIER_OUT + spec.gapFromRaceEdge + spec.width * 0.5;
+    raw.push({
+      x: samp.x + nx * offset,
+      y: samp.y,
+      z: samp.z + nz * offset,
+      yaw: samp.yaw,
+      s,
+      halfW,
     });
-    // Garage boxes every other segment
-    if (apronXforms.length % 2 === 0 && quality.maxDecor >= 20) {
-      const bx = placed.x + placed.nx * 4.5;
-      const bz = placed.z + placed.nz * 4.5;
-      if (!intersectsRoadRibbon(pts, bx, bz, 3.5, quality.sceneryMargin)) {
-        boxXforms.push({
-          x: bx, y: placed.y + 1.6, z: bz,
-          sx: 6.5, sy: 3.2, sz: 4.2,
-          rotY,
-        });
-        roofXforms.push({
-          x: bx, y: placed.y + 3.35, z: bz,
-          sx: 7.0, sy: 0.25, sz: 4.6,
-          rotY,
-        });
-      }
-    }
   }
 
+  // Smooth spur centerline so it does not inherit S/F join wiggle
+  const spur: SpurPt[] = raw.map((p) => ({ ...p }));
+  for (let pass = 0; pass < 3; pass++) {
+    const copy = spur.map((p) => ({ x: p.x, z: p.z }));
+    for (let i = 1; i < spur.length - 1; i++) {
+      spur[i].x = copy[i - 1].x * 0.25 + copy[i].x * 0.5 + copy[i + 1].x * 0.25;
+      spur[i].z = copy[i - 1].z * 0.25 + copy[i].z * 0.5 + copy[i + 1].z * 0.25;
+    }
+  }
+  // Recompute yaw from smoothed polyline
+  for (let i = 0; i < spur.length; i++) {
+    const a = spur[Math.max(0, i - 1)];
+    const b = spur[Math.min(spur.length - 1, i + 1)];
+    spur[i].yaw = Math.atan2(b.x - a.x, b.z - a.z);
+  }
+
+  const halfPit = spec.width * 0.5;
+  const pitInner: THREE.Vector3[] = [];
+  const pitOuter: THREE.Vector3[] = [];
+  for (const p of spur) {
+    const nx = Math.cos(p.yaw);
+    const nz = -Math.sin(p.yaw);
+    pitInner.push(new THREE.Vector3(p.x - nx * halfPit, p.y, p.z - nz * halfPit));
+    pitOuter.push(new THREE.Vector3(p.x + nx * halfPit, p.y, p.z + nz * halfPit));
+  }
+
+  const ribbon = new THREE.Mesh(buildRibbonGeometry(pitInner, pitOuter, 0.1), asphaltMat);
+  ribbon.receiveShadow = true;
+  ribbon.name = 'pitAsphalt';
+  group.add(ribbon);
+
+  // Entry / exit taper connectors: race right edge → pit inner (only near openings)
+  const connectMats = asphaltMat;
+  const addConnector = (fromS: number, toS: number, towardPit: boolean) => {
+    const cInner: THREE.Vector3[] = [];
+    const cOuter: THREE.Vector3[] = [];
+    const samples = 8;
+    for (let i = 0; i <= samples; i++) {
+      const t = i / samples;
+      const s =
+        fromS < toS
+          ? fromS + (toS - fromS) * t
+          : fromS + ((toS + total - fromS) % total) * t; // should not wrap in our use
+      const ss = ((s % total) + total) % total;
+      const samp = sampleTrack(pts, ss);
+      const nx = Math.cos(samp.yaw);
+      const nz = -Math.sin(samp.yaw);
+      const raceEdge = samp.width * 0.5;
+      // Blend lateral from race edge to pit inner
+      const pitLat = raceEdge + TRACK_BARRIER_OUT + spec.gapFromRaceEdge;
+      const blend = towardPit ? t : 1 - t;
+      const lat0 = raceEdge * 0.92;
+      const lat1 = pitLat;
+      const latA = lat0 + (lat1 - lat0) * blend;
+      const latB = latA + 1.8 + blend * (spec.width * 0.55);
+      cInner.push(
+        new THREE.Vector3(
+          samp.x + nx * latA,
+          samp.y,
+          samp.z + nz * latA,
+        ),
+      );
+      cOuter.push(
+        new THREE.Vector3(
+          samp.x + nx * latB,
+          samp.y,
+          samp.z + nz * latB,
+        ),
+      );
+    }
+    if (cInner.length >= 2) {
+      const mesh = new THREE.Mesh(buildRibbonGeometry(cInner, cOuter, 0.105), connectMats);
+      mesh.receiveShadow = true;
+      group.add(mesh);
+    }
+  };
+  // Entry: peel out before S/F
+  addConnector(total - spec.entryOpenLen, total - 1.5, true);
+  // Exit: merge back after S/F
+  addConnector(1.5, spec.exitOpenLen, false);
+
+  // Dashed center line on spur
   const unit = new THREE.BoxGeometry(1, 1, 1);
-  const addList = (
-    list: typeof apronXforms,
-    mat: THREE.Material,
-    cast: boolean,
-  ) => {
+  const dummy = new THREE.Object3D();
+  const dashXforms: { x: number; y: number; z: number; sx: number; sy: number; sz: number; rotY: number }[] = [];
+  for (let i = 0; i < spur.length - 1; i += 2) {
+    const a = spur[i];
+    const b = spur[i + 1];
+    const seg = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+    dashXforms.push({
+      x: (a.x + b.x) * 0.5,
+      y: a.y + 0.14,
+      z: (a.z + b.z) * 0.5,
+      sx: 0.28,
+      sy: 0.04,
+      sz: Math.min(2.2, seg * 0.8),
+      rotY: a.yaw,
+    });
+  }
+
+  // White dashed entry paint on race asphalt (inside opening only)
+  const paintXforms: typeof dashXforms = [];
+  const entryPaintStart = total - spec.entryOpenLen;
+  for (let s = entryPaintStart; s < total - 2; s += 3.0) {
+    const samp = sampleTrack(pts, s);
+    const nx = Math.cos(samp.yaw);
+    const nz = -Math.sin(samp.yaw);
+    const lat = samp.width * 0.28;
+    paintXforms.push({
+      x: samp.x + nx * lat,
+      y: samp.y + 0.12,
+      z: samp.z + nz * lat,
+      sx: 0.32,
+      sy: 0.05,
+      sz: 2.0,
+      rotY: samp.yaw,
+    });
+  }
+
+  const addInst = (list: typeof dashXforms, mat: THREE.Material, cast: boolean) => {
     if (!list.length) return;
     const mesh = new THREE.InstancedMesh(unit, mat, list.length);
     mesh.castShadow = cast && quality.sceneryCastShadow;
     mesh.receiveShadow = true;
+    mesh.renderOrder = 3;
     for (let i = 0; i < list.length; i++) {
       const t = list[i];
       dummy.position.set(t.x, t.y, t.z);
@@ -2482,23 +2608,58 @@ function addPitLane(
     mesh.instanceMatrix.needsUpdate = true;
     group.add(mesh);
   };
+  addInst(dashXforms, dashMat, false);
+  addInst(paintXforms, entryPaintMat, false);
 
-  addList(apronXforms, asphaltMat, false);
-  addList(boxXforms, boxMat, true);
-  addList(roofXforms, roofMat, true);
-
-  // White pit-entry dashed line on apron start marker
-  if (apronXforms.length > 0) {
-    const a0 = apronXforms[0];
-    const marker = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.12, 2.8), lineMat);
-    marker.position.set(a0.x, a0.y + 0.08, a0.z);
-    marker.rotation.y = a0.rotY;
-    group.add(marker);
+  // Garage boxes along outer spur (box zone only)
+  const boxXforms: typeof dashXforms = [];
+  const roofXforms: typeof dashXforms = [];
+  let nextBox = -1;
+  for (const p of spur) {
+    if (p.s < spec.boxStartS || p.s > spec.boxEndS) continue;
+    if (p.s < nextBox) continue;
+    nextBox = p.s + 7.2;
+    const nx = Math.cos(p.yaw);
+    const nz = -Math.sin(p.yaw);
+    const bx = p.x + nx * (halfPit + 3.6);
+    const bz = p.z + nz * (halfPit + 3.6);
+    if (intersectsRoadRibbon(pts, bx, bz, 3.2, quality.sceneryMargin)) continue;
+    if (!acceptPropY(pts, bx, bz, p.y, 2.4)) continue;
+    boxXforms.push({
+      x: bx, y: p.y + 1.55, z: bz,
+      sx: 6.0, sy: 3.0, sz: 3.8, rotY: p.yaw,
+    });
+    roofXforms.push({
+      x: bx, y: p.y + 3.2, z: bz,
+      sx: 6.6, sy: 0.22, sz: 4.2, rotY: p.yaw,
+    });
   }
+  addInst(boxXforms, boxMat, true);
+  addInst(roofXforms, roofMat, true);
 
-  void left; // keep signature parity with scenery helpers
+  // Low outer pit wall stubs (outside spur — never on race asphalt)
+  const wallXforms: typeof dashXforms = [];
+  let nextWall = -1;
+  for (const p of spur) {
+    if (p.s < nextWall) continue;
+    nextWall = p.s + 5.2;
+    const nx = Math.cos(p.yaw);
+    const nz = -Math.sin(p.yaw);
+    const wx = p.x + nx * (halfPit + 0.45);
+    const wz = p.z + nz * (halfPit + 0.45);
+    if (intersectsRoadRibbon(pts, wx, wz, 0.5, 0.4)) continue;
+    wallXforms.push({
+      x: wx, y: p.y + 0.55, z: wz,
+      sx: 0.26, sy: 1.0, sz: 3.8, rotY: p.yaw,
+    });
+  }
+  addInst(wallXforms, barrierMat, false);
+
+  void left;
+  void right;
   root.add(group);
 }
+
 
 export function getMinimapPath(
   track: TrackData,
