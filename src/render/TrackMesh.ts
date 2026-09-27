@@ -35,11 +35,15 @@ function makeAsphaltTexture(anisotropy: number): THREE.CanvasTexture {
     ctx.fillStyle = `rgba(${v},${v},${v + 6},${a})`;
     ctx.fillRect(Math.random() * 512, Math.random() * 512, 1 + Math.random() * 2.5, 1 + Math.random() * 2.5);
   }
-  // Rubber wear bands (racing line)
-  for (let band = 0; band < 5; band++) {
-    const x0 = 55 + band * 80 + Math.random() * 18;
-    ctx.fillStyle = 'rgba(8,8,12,0.22)';
-    ctx.fillRect(x0, 0, 14 + Math.random() * 12, 512);
+  // Soft center polish only — no multi-band "racing line" strips (they read as blue ribbons under sky fill)
+  {
+    const grd = ctx.createLinearGradient(180, 0, 332, 0);
+    grd.addColorStop(0, 'rgba(8,8,12,0)');
+    grd.addColorStop(0.45, 'rgba(8,8,12,0.1)');
+    grd.addColorStop(0.55, 'rgba(8,8,12,0.1)');
+    grd.addColorStop(1, 'rgba(8,8,12,0)');
+    ctx.fillStyle = grd;
+    ctx.fillRect(180, 0, 152, 512);
   }
   // Oil / polish sheen patches
   for (let i = 0; i < 12; i++) {
@@ -98,11 +102,14 @@ function makeAsphaltRoughnessMap(anisotropy: number): THREE.CanvasTexture {
     ctx.fillStyle = `rgb(${v},${v},${v})`;
     ctx.fillRect(Math.random() * 256, Math.random() * 256, 1 + Math.random() * 2, 1 + Math.random() * 2);
   }
-  // Polished racing-line bands (lower roughness)
-  for (let band = 0; band < 5; band++) {
-    const x0 = 28 + band * 40 + Math.random() * 8;
-    ctx.fillStyle = 'rgb(90,90,95)';
-    ctx.fillRect(x0, 0, 8 + Math.random() * 6, 256);
+  // Soft center polish (single gentle band — avoids stacked blue sky reflections)
+  {
+    const grd = ctx.createLinearGradient(90, 0, 166, 0);
+    grd.addColorStop(0, 'rgb(200,200,200)');
+    grd.addColorStop(0.5, 'rgb(130,130,135)');
+    grd.addColorStop(1, 'rgb(200,200,200)');
+    ctx.fillStyle = grd;
+    ctx.fillRect(90, 0, 76, 256);
   }
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -421,9 +428,9 @@ export function createTrackMesh(
         roughness: 0.72,
         roughnessMap: asphaltRough,
         metalness: 0.06,
-        envMapIntensity: 0.75,
-        clearcoat: 0.22,
-        clearcoatRoughness: 0.45,
+        envMapIntensity: 0.55,
+        clearcoat: 0.14,
+        clearcoatRoughness: 0.55,
       })
     : new THREE.MeshStandardMaterial({
         color: 0x2c2c32,
@@ -431,7 +438,7 @@ export function createTrackMesh(
         roughness: 0.82,
         roughnessMap: asphaltRough,
         metalness: 0.05,
-        envMapIntensity: 0.5,
+        envMapIntensity: 0.35,
       });
   // Asphalt clearly above terrain/shoulders — prevents grass / shoulder z-fight
   const asphalt = new THREE.Mesh(buildRibbonGeometry(left, right, 0.09), asphaltMat);
@@ -442,17 +449,17 @@ export function createTrackMesh(
   // Soft edge darken blend (slightly wider, transparent) — hides hard rectangle seams
   addSoftEdgeBlend(root, left, right, pts);
 
-  // Subtle center wear line — skip join/coplanar so it never z-fights asphalt
+  // Subtle center wear — skip S/F join, coplanar decks, and pit corridor (no stacked translucent strip)
   const { left: ll, right: rr } = getTrackEdges(pts, 0.1);
   const lineMat = new THREE.MeshStandardMaterial({
     color: 0x1a1e24,
     transparent: true,
-    opacity: 0.32,
+    opacity: 0.2,
     depthWrite: false,
     roughness: 0.95,
     metalness: 0,
   });
-  root.add(new THREE.Mesh(buildRibbonGeometrySkipJoinCoplanar(ll, rr, 0.1, pts, 18), lineMat));
+  root.add(new THREE.Mesh(buildRibbonGeometrySkipJoinPit(ll, rr, 0.098, pts, 28), lineMat));
 
   addEdgeLine(root, left, true, pts);
   addEdgeLine(root, right, false, pts);
@@ -701,19 +708,20 @@ function addSoftEdgeBlend(
   const mat = new THREE.MeshBasicMaterial({
     color: 0x121214,
     transparent: true,
-    opacity: 0.28,
+    opacity: 0.22,
     depthWrite: false,
-    side: THREE.DoubleSide,
+    side: THREE.FrontSide,
   });
   // Sit just under asphalt top — never coplanar with kerbs at join / overpass
   const leftBand = new THREE.Mesh(
-    buildRibbonGeometrySkipJoinCoplanar(outerL, left, 0.07, pts, 18),
+    buildRibbonGeometrySkipJoinCoplanar(outerL, left, 0.07, pts, 22),
     mat,
   );
   leftBand.renderOrder = 1;
   root.add(leftBand);
+  // Right soft-edge omitted through pit corridor — connectors / dashed paint own that seam
   const rightBand = new THREE.Mesh(
-    buildRibbonGeometrySkipJoinCoplanar(right, outerR, 0.07, pts, 18),
+    buildRibbonGeometrySkipJoinPit(right, outerR, 0.07, pts, 22),
     mat.clone(),
   );
   rightBand.renderOrder = 1;
@@ -1529,6 +1537,53 @@ function buildRibbonGeometrySkipJoinCoplanar(
   geo.setIndex(indices);
   return geo;
 }
+
+/** SkipJoin + coplanar + pit corridor (no translucent overlays stacking on pit mouth / S/F). */
+function buildRibbonGeometrySkipJoinPit(
+  left: THREE.Vector3[],
+  right: THREE.Vector3[],
+  yLift: number,
+  pts: TrackPoint[],
+  skipM: number,
+): THREE.BufferGeometry {
+  const n = Math.min(left.length, right.length, pts.length);
+  const total = pts[pts.length - 1]?.s || 1;
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  for (let i = 0; i < n; i++) {
+    positions.push(left[i].x, left[i].y + yLift, left[i].z);
+    positions.push(right[i].x, right[i].y + yLift, right[i].z);
+    normals.push(0, 1, 0, 0, 1, 0);
+    uvs.push(0, i / Math.max(n - 1, 1), 1, i / Math.max(n - 1, 1));
+  }
+  const nearJoin = (i: number): boolean => {
+    const s = pts[Math.min(i, pts.length - 1)].s;
+    return s < skipM || s > total - skipM;
+  };
+  for (let i = 0; i < n - 1; i++) {
+    if (nearJoin(i) || nearJoin(i + 1)) continue;
+    const s0 = pts[Math.min(i, pts.length - 1)].s;
+    const s1 = pts[Math.min(i + 1, pts.length - 1)].s;
+    if (isPitCorridorS(s0, total) || isPitCorridorS(s1, total)) continue;
+    if (hasCoplanarForeignRibbon(pts, i) || hasCoplanarForeignRibbon(pts, i + 1)) continue;
+    const lx = left[i + 1].x - left[i].x;
+    const lz = left[i + 1].z - left[i].z;
+    const rx = right[i + 1].x - right[i].x;
+    const rz = right[i + 1].z - right[i].z;
+    if (Math.hypot(lx, lz) < 1e-4 && Math.hypot(rx, rz) < 1e-4) continue;
+    const a = i * 2;
+    indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  return geo;
+}
+
 
 function addKerbs(
   root: THREE.Group,
@@ -2497,20 +2552,29 @@ function addPitLane(
   const entryYellowMat = new THREE.MeshBasicMaterial({
     color: 0xf0c410,
     transparent: true,
-    opacity: 0.96,
+    opacity: 0.92,
     depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
   });
   const entryWhiteMat = new THREE.MeshBasicMaterial({
     color: 0xf7f4ea,
     transparent: true,
-    opacity: 0.95,
+    opacity: 0.9,
     depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
   });
   const arrowMat = new THREE.MeshBasicMaterial({
     color: 0xffe14a,
     transparent: true,
-    opacity: 0.97,
+    opacity: 0.92,
     depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -3,
+    polygonOffsetUnits: -3,
   });
   const roofMat = makeSceneryMat(0xb01818, quality);
   const mouthKerbMat = quality.useLambertScenery
@@ -2616,12 +2680,12 @@ function addPitLane(
     }
   }
 
-  // Entry / exit taper connectors: race right edge → pit INNER only (no width into pit = no duplicate strip)
+  // Entry / exit taper connectors: ONLY the race-edge → pit-inner gap (never onto race asphalt)
   const connectMats = asphaltMat;
   const addConnector = (fromS: number, toS: number, towardPit: boolean) => {
     const cInner: THREE.Vector3[] = [];
     const cOuter: THREE.Vector3[] = [];
-    const samples = 10;
+    const samples = 12;
     for (let i = 0; i <= samples; i++) {
       const t = i / samples;
       const s = fromS + (toS - fromS) * t;
@@ -2631,14 +2695,16 @@ function addPitLane(
       const nz = -Math.sin(samp.yaw);
       const raceEdge = samp.width * 0.5;
       const pitLat = pitSpurInnerOffset(raceEdge, ss, total, spec);
+      // How much of the gap to fill (thin at far end of taper, full at mouth)
       const blend = towardPit ? t : 1 - t;
       const ease = blend * blend * (3 - 2 * blend);
-      const lat0 = raceEdge * 0.92;
-      const lat1 = pitLat;
-      // Fill ONLY the gap race→pit-inner (+tiny seam into pit for join, not a second lane)
-      const latA = lat0 + (lat1 - lat0) * ease;
-      const latB = lat1 + 0.28;
-      if (latB <= latA + 0.05) continue;
+      // Stay strictly outside race asphalt (+small kerb clearance); never lat < raceEdge
+      const latA = raceEdge + 0.12;
+      const gap = Math.max(0, pitLat - latA);
+      if (gap < 0.35) continue;
+      // Taper: near approach only a mouth wedge; at mouth fill full gap to pit inner
+      const latB = latA + gap * (0.2 + 0.8 * ease);
+      if (latB <= latA + 0.08) continue;
       cInner.push(new THREE.Vector3(samp.x + nx * latA, samp.y, samp.z + nz * latA));
       cOuter.push(new THREE.Vector3(samp.x + nx * latB, samp.y, samp.z + nz * latB));
     }
@@ -2649,10 +2715,9 @@ function addPitLane(
       group.add(mesh);
     }
   };
-  // Entry: peel out before S/F (covers Tecpro mouth + approach of the arc)
-  addConnector(total - Math.max(spec.entryOpenLen, spec.entryBeforeSf * 0.55), total - 1.5, true);
-  // Exit: merge back after S/F along the return arc
-  addConnector(1.5, Math.max(spec.exitOpenLen, spec.exitAfterSf * 0.55), false);
+  // Entry/exit mouths only (not the full arc approach) — avoids long coplanar ribbons on race
+  addConnector(total - spec.entryOpenLen, total - 1.5, true);
+  addConnector(1.5, spec.exitOpenLen, false);
 
   // Dashed center line on spur (above pit asphalt)
   const unit = new THREE.BoxGeometry(1, 1, 1);
@@ -2683,10 +2748,10 @@ function addPitLane(
     const samp = sampleTrack(pts, s);
     const nx = Math.cos(samp.yaw);
     const nz = -Math.sin(samp.yaw);
-    // Double row toward right edge — yellow outer, white inner
-    const latWhite = samp.width * 0.22;
-    const latYellow = samp.width * 0.36;
-    const y = samp.y + 0.125; // above race asphalt 0.09, below pit paint
+    // Double row inward of race edge (leave outer ~12% clear for kerb / connector seam)
+    const latWhite = samp.width * 0.18;
+    const latYellow = samp.width * 0.3;
+    const y = samp.y + 0.122; // above race asphalt; single paint deck (no connector stack)
     whitePaint.push({
       x: samp.x + nx * latWhite,
       y,
@@ -2707,7 +2772,7 @@ function addPitLane(
     });
     // Chevron / arrow every ~3rd dash inside the mouth
     if (s >= total - spec.entryOpenLen && paintIdx % 3 === 0) {
-      const latArr = samp.width * 0.3;
+      const latArr = samp.width * 0.24;
       yellowPaint.push({
         x: samp.x + nx * latArr,
         y: y + 0.012,
@@ -2727,10 +2792,10 @@ function addPitLane(
     const samp = sampleTrack(pts, s);
     const nx = Math.cos(samp.yaw);
     const nz = -Math.sin(samp.yaw);
-    const lat = samp.width * 0.42;
+    const lat = samp.width * 0.34;
     arrowXforms.push({
       x: samp.x + nx * lat,
-      y: samp.y + 0.135,
+      y: samp.y + 0.128,
       z: samp.z + nz * lat,
       sx: 1.6,
       sy: 0.05,
