@@ -3,8 +3,9 @@
  *
  * Layout (all tracks):
  *  - Main ribbon / Tecpro stay as-built except two RIGHT-side openings
- *  - Separate pit asphalt spur runs parallel outside right barriers
+ *  - Separate pit asphalt spur peels away in a curved arc (дуга) outside right barriers
  *  - Entry opening before S/F → boxes after S/F → exit opening after start
+ *  - Mid corridor sits farther from race asphalt; entry/exit curve back to merge
  *
  * Mandatory pit (Quick Race / Tutorial): complete mini-game by end of lap
  * ceil(totalLaps/2). Miss → DQ.
@@ -23,8 +24,13 @@ export interface PitLaneSpec {
   exitOpenLen: number;
   /** Pit asphalt strip width (m) */
   width: number;
-  /** Clear gap between race Tecpro outer face and pit inner edge (m) */
+  /** Clear gap between race Tecpro outer face and pit inner edge at mouths (m) */
   gapFromRaceEdge: number;
+  /**
+   * Extra lateral bulge at mid corridor (m) — spur peels out in an arc so mid
+   * pit / boxes sit clearly farther from the racing line (not glued parallel).
+   */
+  midBulge: number;
   /** Box stop zone: s after S/F */
   boxStartS: number;
   boxEndS: number;
@@ -32,11 +38,11 @@ export interface PitLaneSpec {
   boxLateralFrac: number;
   stopSpeed: number;
   hintSpeedMax: number;
-  /** Extra right-side barrier allowance when in spur / openings (m beyond halfW) */
-  apronExtra: number;
+  /** Extra garage / outer-wall margin beyond spur outer edge (m) */
+  apronMargin: number;
 }
 
-/** Enlarged spur + longer mouths so peel-off / boxes read clearly (race centerline untouched). */
+/** Enlarged spur + arc peel + longer mouths (race centerline untouched). */
 export const PIT_LANE: PitLaneSpec = {
   entryBeforeSf: 105,
   exitAfterSf: 82,
@@ -44,15 +50,69 @@ export const PIT_LANE: PitLaneSpec = {
   exitOpenLen: 40,
   width: 9.5,
   gapFromRaceEdge: 0.55,
+  // Clear outward arc — mid pit ~10 m farther than a parallel strip
+  midBulge: 10.5,
   boxStartS: 8,
   boxEndS: 58,
   hintLateralFrac: 0.18,
   boxLateralFrac: 0.52,
   stopSpeed: 7,
   hintSpeedMax: 48,
-  // ~ barrier + gap + width + garage margin
-  apronExtra: 15.5,
+  apronMargin: 4.5,
 };
+
+/** Raised-cosine ease 0→1 (smooth arc segment). */
+function halfCos01(t: number): number {
+  const x = Math.max(0, Math.min(1, t));
+  return 0.5 - 0.5 * Math.cos(Math.PI * x);
+}
+
+/**
+ * Arc bulge factor along the pit corridor: 0 at entry/exit ends, 1 through mid
+ * (S/F + boxes). Entry peels out as a curve; exit curves back to merge.
+ */
+export function pitArcBulgeFactor(
+  s: number,
+  trackLen: number,
+  spec: PitLaneSpec = PIT_LANE,
+): number {
+  if (trackLen <= 1 || !isPitCorridorS(s, trackLen, spec)) return 0;
+
+  if (s >= trackLen - spec.entryBeforeSf) {
+    // Entry arm: peel 0 → 1 (reach full bulge before S/F so mouth reads as an arc)
+    const u = (s - (trackLen - spec.entryBeforeSf)) / Math.max(1, spec.entryBeforeSf);
+    // Fully out by ~70% of the entry run
+    return halfCos01(Math.min(1, u / 0.7));
+  }
+
+  // Exit arm: hold full bulge through boxes, then arc back to 0
+  const u = s / Math.max(1, spec.exitAfterSf);
+  const holdEnd = Math.min(0.78, (spec.boxEndS + 6) / Math.max(1, spec.exitAfterSf));
+  if (u <= holdEnd) return 1;
+  return halfCos01(1 - (u - holdEnd) / Math.max(1e-6, 1 - holdEnd));
+}
+
+/** Lateral distance from race centerline to pit strip centerline (right side). */
+export function pitSpurCenterOffset(
+  halfW: number,
+  s: number,
+  trackLen: number,
+  spec: PitLaneSpec = PIT_LANE,
+): number {
+  const bulge = spec.midBulge * pitArcBulgeFactor(s, trackLen, spec);
+  return halfW + TRACK_BARRIER_OUT + spec.gapFromRaceEdge + spec.width * 0.5 + bulge;
+}
+
+/** Inner edge of pit asphalt (right of race Tecpro), including local arc bulge. */
+export function pitSpurInnerOffset(
+  halfW: number,
+  s: number,
+  trackLen: number,
+  spec: PitLaneSpec = PIT_LANE,
+): number {
+  const bulge = spec.midBulge * pitArcBulgeFactor(s, trackLen, spec);
+  return halfW + TRACK_BARRIER_OUT + spec.gapFromRaceEdge + bulge;
+}
 
 export function isPitCorridorS(s: number, trackLen: number, spec: PitLaneSpec = PIT_LANE): boolean {
   if (trackLen <= 1) return false;
@@ -87,7 +147,8 @@ export function isPitKerbSkip(
 /**
  * Physics apron: open right barrier at entry/exit mouths, or when already past
  * race Tecpro into the pit spur (so the car can drive boxes without ghosting
- * through the mid-corridor wall from the racing line).
+ * through the mid-corridor wall from the racing line). Allowance grows with
+ * the local arc bulge so mid pit stays reachable.
  */
 export function pitApronAllowance(
   s: number,
@@ -97,8 +158,11 @@ export function pitApronAllowance(
   spec: PitLaneSpec = PIT_LANE,
 ): number {
   if (lateral <= 0 || !isPitCorridorS(s, trackLen, spec)) return 0;
-  if (isPitTecproGap(s, trackLen, 1, spec)) return spec.apronExtra;
-  if (lateral > halfW + TRACK_BARRIER_OUT * 0.85) return spec.apronExtra;
+  const bulge = spec.midBulge * pitArcBulgeFactor(s, trackLen, spec);
+  const need =
+    TRACK_BARRIER_OUT + spec.gapFromRaceEdge + spec.width + bulge + spec.apronMargin;
+  if (isPitTecproGap(s, trackLen, 1, spec)) return need;
+  if (lateral > halfW + TRACK_BARRIER_OUT * 0.85) return need;
   return 0;
 }
 

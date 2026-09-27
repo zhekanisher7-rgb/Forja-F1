@@ -38,5 +38,8 @@ export {
   modeHasMandatoryPit,
   isPitCorridorS,
   isPitTecproGap,
+  pitArcBulgeFactor,
+  pitSpurCenterOffset,
+  pitSpurInnerOffset,
 } from './PitLane';
 export type { PitLaneSpec } from './PitLane';

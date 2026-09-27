@@ -5,6 +5,8 @@ import {
   PIT_LANE,
   isPitCorridorS,
   isPitTecproGap,
+  pitSpurCenterOffset,
+  pitSpurInnerOffset,
 } from '../tracks/PitLane';
 
 /** Set per createTrackMesh — Monaco casino/tunnel hills vs generic ribbon terrain. */
@@ -2436,7 +2438,7 @@ function makePitSignTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-/** Clean pit ENTRY/EXIT spur — parallel add-on outside right Tecpro; race ribbon untouched. */
+/** Clean pit ENTRY/EXIT spur — curved arc (дуга) outside right Tecpro; race ribbon untouched. */
 function addPitLane(
   root: THREE.Group,
   pts: TrackPoint[],
@@ -2512,7 +2514,8 @@ function addPitLane(
     // Right-hand normal (same convention as projectOnTrack lateral+)
     const nx = Math.cos(samp.yaw);
     const nz = -Math.sin(samp.yaw);
-    const offset = halfW + TRACK_BARRIER_OUT + spec.gapFromRaceEdge + spec.width * 0.5;
+    // Arc offset: peel out at entry, mid farther from race line, curve back at exit
+    const offset = pitSpurCenterOffset(halfW, s, total, spec);
     raw.push({
       x: samp.x + nx * offset,
       y: samp.y,
@@ -2571,13 +2574,15 @@ function addPitLane(
       const nx = Math.cos(samp.yaw);
       const nz = -Math.sin(samp.yaw);
       const raceEdge = samp.width * 0.5;
-      // Blend lateral from race edge to pit inner
-      const pitLat = raceEdge + TRACK_BARRIER_OUT + spec.gapFromRaceEdge;
+      // Blend lateral from race edge to local arc pit-inner (follows bulge)
+      const pitLat = pitSpurInnerOffset(raceEdge, ss, total, spec);
       const blend = towardPit ? t : 1 - t;
+      // Ease blend so connector itself reads as a curved peel, not a straight stub
+      const ease = blend * blend * (3 - 2 * blend);
       const lat0 = raceEdge * 0.88;
       const lat1 = pitLat;
-      const latA = lat0 + (lat1 - lat0) * blend;
-      const latB = latA + 2.2 + blend * (spec.width * 0.62);
+      const latA = lat0 + (lat1 - lat0) * ease;
+      const latB = latA + 2.2 + ease * (spec.width * 0.62);
       cInner.push(
         new THREE.Vector3(
           samp.x + nx * latA,
@@ -2599,10 +2604,10 @@ function addPitLane(
       group.add(mesh);
     }
   };
-  // Entry: peel out before S/F
-  addConnector(total - spec.entryOpenLen, total - 1.5, true);
-  // Exit: merge back after S/F
-  addConnector(1.5, spec.exitOpenLen, false);
+  // Entry: peel out before S/F (covers Tecpro mouth + approach of the arc)
+  addConnector(total - Math.max(spec.entryOpenLen, spec.entryBeforeSf * 0.55), total - 1.5, true);
+  // Exit: merge back after S/F along the return arc
+  addConnector(1.5, Math.max(spec.exitOpenLen, spec.exitAfterSf * 0.55), false);
 
   // Dashed center line on spur
   const unit = new THREE.BoxGeometry(1, 1, 1);
