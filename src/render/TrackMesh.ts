@@ -2438,7 +2438,43 @@ function makePitSignTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-/** Clean pit ENTRY/EXIT spur — curved arc (дуга) outside right Tecpro; race ribbon untouched. */
+
+/** Pit garage facade — plaster + window grid + door bay (shared InstancedMesh map). */
+function makeGarageFacadeTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 256;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#6a7078';
+  ctx.fillRect(0, 0, 128, 256);
+  // Window grid
+  for (let row = 0; row < 4; row++) {
+    for (let col = 0; col < 3; col++) {
+      const x = 12 + col * 38;
+      const y = 18 + row * 42;
+      ctx.fillStyle = '#1a2830';
+      ctx.fillRect(x, y, 28, 28);
+      ctx.fillStyle = 'rgba(140,190,220,0.45)';
+      ctx.fillRect(x + 2, y + 2, 24, 24);
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.strokeRect(x + 2, y + 2, 24, 24);
+    }
+  }
+  // Lower door / shutter band
+  ctx.fillStyle = '#2a2e34';
+  ctx.fillRect(0, 200, 128, 56);
+  ctx.fillStyle = '#101214';
+  ctx.fillRect(36, 208, 56, 40);
+  ctx.fillStyle = 'rgba(240,200,40,0.35)';
+  ctx.fillRect(8, 220, 18, 10);
+  ctx.fillRect(102, 220, 18, 10);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+/** Pit spur arc (дуга): raised asphalt, gap-only connectors, outer Tecpro at boxes, detailed garages. */
 function addPitLane(
   root: THREE.Group,
   pts: TrackPoint[],
@@ -2476,13 +2512,7 @@ function addPitLane(
     opacity: 0.97,
     depthWrite: false,
   });
-  const boxMat = quality.useLambertScenery
-    ? new THREE.MeshLambertMaterial({ color: 0x4e545c })
-    : new THREE.MeshStandardMaterial({ color: 0x4e545c, roughness: 0.85, metalness: 0.1 });
   const roofMat = makeSceneryMat(0xb01818, quality);
-  const barrierMat = quality.useLambertScenery
-    ? new THREE.MeshLambertMaterial({ color: 0xc8c8d0 })
-    : new THREE.MeshStandardMaterial({ color: 0xc8c8d0, roughness: 0.55, metalness: 0.15 });
   const mouthKerbMat = quality.useLambertScenery
     ? new THREE.MeshLambertMaterial({ color: 0xf0c410 })
     : new THREE.MeshStandardMaterial({ color: 0xf0c410, roughness: 0.55, metalness: 0.05 });
@@ -2552,12 +2582,41 @@ function addPitLane(
     pitOuter.push(new THREE.Vector3(p.x + nx * halfPit, p.y, p.z + nz * halfPit));
   }
 
-  const ribbon = new THREE.Mesh(buildRibbonGeometry(pitInner, pitOuter, 0.1), asphaltMat);
+  // Pit asphalt raised above race ribbon (0.09) — avoids coplanar z-fight with race / connectors
+  const PIT_Y = 0.145;
+  const CONNECT_Y = 0.118;
+  const APRON_Y = 0.132;
+  const ribbon = new THREE.Mesh(buildRibbonGeometry(pitInner, pitOuter, PIT_Y), asphaltMat);
   ribbon.receiveShadow = true;
   ribbon.name = 'pitAsphalt';
   group.add(ribbon);
 
-  // Entry / exit taper connectors: race right edge → pit inner (only near openings)
+  // Outer apron (garage forecourt) — below pit asphalt Y, outside outer edge (no coplanar strip)
+  {
+    const aIn: THREE.Vector3[] = [];
+    const aOut: THREE.Vector3[] = [];
+    for (const p of spur) {
+      const s = p.s;
+      const inBoxArm =
+        (s >= 0 && s <= spec.boxEndS + 12) || (s >= total - 8 && s <= total);
+      if (!inBoxArm) continue;
+      const nx = Math.cos(p.yaw);
+      const nz = -Math.sin(p.yaw);
+      aIn.push(new THREE.Vector3(p.x + nx * (halfPit + 0.2), p.y, p.z + nz * (halfPit + 0.2)));
+      aOut.push(new THREE.Vector3(p.x + nx * (halfPit + 3.8), p.y, p.z + nz * (halfPit + 3.8)));
+    }
+    if (aIn.length >= 2) {
+      const apronMat = quality.useLambertScenery
+        ? new THREE.MeshLambertMaterial({ color: 0x3a3a42 })
+        : new THREE.MeshStandardMaterial({ color: 0x3a3a42, roughness: 0.92, metalness: 0.04 });
+      const apron = new THREE.Mesh(buildRibbonGeometry(aIn, aOut, APRON_Y), apronMat);
+      apron.receiveShadow = true;
+      apron.name = 'pitApron';
+      group.add(apron);
+    }
+  }
+
+  // Entry / exit taper connectors: race right edge → pit INNER only (no width into pit = no duplicate strip)
   const connectMats = asphaltMat;
   const addConnector = (fromS: number, toS: number, towardPit: boolean) => {
     const cInner: THREE.Vector3[] = [];
@@ -2565,42 +2624,28 @@ function addPitLane(
     const samples = 10;
     for (let i = 0; i <= samples; i++) {
       const t = i / samples;
-      const s =
-        fromS < toS
-          ? fromS + (toS - fromS) * t
-          : fromS + ((toS + total - fromS) % total) * t; // should not wrap in our use
+      const s = fromS + (toS - fromS) * t;
       const ss = ((s % total) + total) % total;
       const samp = sampleTrack(pts, ss);
       const nx = Math.cos(samp.yaw);
       const nz = -Math.sin(samp.yaw);
       const raceEdge = samp.width * 0.5;
-      // Blend lateral from race edge to local arc pit-inner (follows bulge)
       const pitLat = pitSpurInnerOffset(raceEdge, ss, total, spec);
       const blend = towardPit ? t : 1 - t;
-      // Ease blend so connector itself reads as a curved peel, not a straight stub
       const ease = blend * blend * (3 - 2 * blend);
-      const lat0 = raceEdge * 0.88;
+      const lat0 = raceEdge * 0.92;
       const lat1 = pitLat;
+      // Fill ONLY the gap race→pit-inner (+tiny seam into pit for join, not a second lane)
       const latA = lat0 + (lat1 - lat0) * ease;
-      const latB = latA + 2.2 + ease * (spec.width * 0.62);
-      cInner.push(
-        new THREE.Vector3(
-          samp.x + nx * latA,
-          samp.y,
-          samp.z + nz * latA,
-        ),
-      );
-      cOuter.push(
-        new THREE.Vector3(
-          samp.x + nx * latB,
-          samp.y,
-          samp.z + nz * latB,
-        ),
-      );
+      const latB = lat1 + 0.28;
+      if (latB <= latA + 0.05) continue;
+      cInner.push(new THREE.Vector3(samp.x + nx * latA, samp.y, samp.z + nz * latA));
+      cOuter.push(new THREE.Vector3(samp.x + nx * latB, samp.y, samp.z + nz * latB));
     }
     if (cInner.length >= 2) {
-      const mesh = new THREE.Mesh(buildRibbonGeometry(cInner, cOuter, 0.105), connectMats);
+      const mesh = new THREE.Mesh(buildRibbonGeometry(cInner, cOuter, CONNECT_Y), connectMats);
       mesh.receiveShadow = true;
+      mesh.name = 'pitConnector';
       group.add(mesh);
     }
   };
@@ -2609,7 +2654,7 @@ function addPitLane(
   // Exit: merge back after S/F along the return arc
   addConnector(1.5, Math.max(spec.exitOpenLen, spec.exitAfterSf * 0.55), false);
 
-  // Dashed center line on spur
+  // Dashed center line on spur (above pit asphalt)
   const unit = new THREE.BoxGeometry(1, 1, 1);
   const dummy = new THREE.Object3D();
   const dashXforms: { x: number; y: number; z: number; sx: number; sy: number; sz: number; rotY: number }[] = [];
@@ -2619,10 +2664,10 @@ function addPitLane(
     const seg = Math.hypot(b.x - a.x, b.z - a.z) || 1;
     dashXforms.push({
       x: (a.x + b.x) * 0.5,
-      y: a.y + 0.14,
+      y: a.y + PIT_Y + 0.035,
       z: (a.z + b.z) * 0.5,
       sx: 0.32,
-      sy: 0.04,
+      sy: 0.035,
       sz: Math.min(2.4, seg * 0.85),
       rotY: a.yaw,
     });
@@ -2641,13 +2686,13 @@ function addPitLane(
     // Double row toward right edge — yellow outer, white inner
     const latWhite = samp.width * 0.22;
     const latYellow = samp.width * 0.36;
-    const y = samp.y + 0.13;
+    const y = samp.y + 0.125; // above race asphalt 0.09, below pit paint
     whitePaint.push({
       x: samp.x + nx * latWhite,
       y,
       z: samp.z + nz * latWhite,
       sx: 0.48,
-      sy: 0.055,
+      sy: 0.045,
       sz: 2.55,
       rotY: samp.yaw,
     });
@@ -2656,7 +2701,7 @@ function addPitLane(
       y,
       z: samp.z + nz * latYellow,
       sx: 0.55,
-      sy: 0.055,
+      sy: 0.045,
       sz: 2.7,
       rotY: samp.yaw,
     });
@@ -2665,10 +2710,10 @@ function addPitLane(
       const latArr = samp.width * 0.3;
       yellowPaint.push({
         x: samp.x + nx * latArr,
-        y: y + 0.01,
+        y: y + 0.012,
         z: samp.z + nz * latArr,
         sx: 1.15,
-        sy: 0.05,
+        sy: 0.04,
         sz: 0.85,
         rotY: samp.yaw + Math.PI * 0.22, // angled toward right peel-off
       });
@@ -2685,10 +2730,10 @@ function addPitLane(
     const lat = samp.width * 0.42;
     arrowXforms.push({
       x: samp.x + nx * lat,
-      y: samp.y + 0.14,
+      y: samp.y + 0.135,
       z: samp.z + nz * lat,
       sx: 1.6,
-      sy: 0.06,
+      sy: 0.05,
       sz: 1.1,
       rotY: samp.yaw + Math.PI * 0.28,
     });
@@ -2766,49 +2811,294 @@ function addPitLane(
     group.add(board);
   }
 
-  // Garage boxes along outer spur (longer box zone, bigger stalls)
-  const boxXforms: typeof dashXforms = [];
-  const roofXforms: typeof dashXforms = [];
+  // ── Detailed pit garages (open front, windows, pillars, sponsor fascia, floor marks) ──
+  const garageFacadeTex = makeGarageFacadeTexture();
+  const garageWallMat = makeSceneryMat(0xffffff, quality, garageFacadeTex);
+  const garageBackMat = makeSceneryMat(0x4a5058, quality);
+  const garagePillarMat = makeSceneryMat(0x2e3238, quality);
+  const garageRoofMat = roofMat;
+  const garageFloorMat = quality.useLambertScenery
+    ? new THREE.MeshLambertMaterial({ color: 0x2c2c32 })
+    : new THREE.MeshStandardMaterial({ color: 0x2c2c32, roughness: 0.88, metalness: 0.06 });
+  const garageMarkMat = new THREE.MeshBasicMaterial({
+    color: 0xf0e8d0,
+    transparent: true,
+    opacity: 0.9,
+    depthWrite: false,
+  });
+  const garageDoorMat = makeSceneryMat(0x1a1c20, quality);
+  const sponsorAtlas = makeSponsorAtlas();
+  const fasciaMats: THREE.Material[] = [];
+  const fasciaCellH = 1 / SPONSOR_NAMES.length;
+  for (let si = 0; si < SPONSOR_NAMES.length; si++) {
+    const map = sponsorAtlas.clone();
+    map.repeat.set(1, fasciaCellH);
+    map.offset.set(0, 1 - (si + 1) * fasciaCellH);
+    map.needsUpdate = true;
+    fasciaMats.push(
+      quality.useLambertScenery
+        ? new THREE.MeshLambertMaterial({ map })
+        : new THREE.MeshStandardMaterial({ map, roughness: 0.55, metalness: 0.12 }),
+    );
+  }
+
+  type Stall = {
+    x: number;
+    y: number;
+    z: number;
+    yaw: number;
+    depth: number;
+    width: number;
+    height: number;
+    sponsor: number;
+  };
+  const stalls: Stall[] = [];
   let nextBox = -1;
+  let stallIdx = 0;
   for (const p of spur) {
     if (p.s < spec.boxStartS || p.s > spec.boxEndS) continue;
     if (p.s < nextBox) continue;
-    nextBox = p.s + 8.4;
+    nextBox = p.s + 8.2;
     const nx = Math.cos(p.yaw);
     const nz = -Math.sin(p.yaw);
-    const bx = p.x + nx * (halfPit + 4.4);
-    const bz = p.z + nz * (halfPit + 4.4);
-    if (intersectsRoadRibbon(pts, bx, bz, 3.8, quality.sceneryMargin)) continue;
+    // Varied depth / width per stall (still shared instance geos)
+    const depth = 5.2 + (stallIdx % 3) * 0.55;
+    const width = 7.0 + (stallIdx % 2) * 0.45;
+    const height = 3.4 + (stallIdx % 3) * 0.15;
+    const lat = halfPit + 2.1 + depth * 0.5;
+    const bx = p.x + nx * lat;
+    const bz = p.z + nz * lat;
+    if (intersectsRoadRibbon(pts, bx, bz, width * 0.45, quality.sceneryMargin)) continue;
     if (!acceptPropY(pts, bx, bz, p.y, 2.4)) continue;
-    boxXforms.push({
-      x: bx, y: p.y + 1.85, z: bz,
-      sx: 7.4, sy: 3.6, sz: 4.6, rotY: p.yaw,
+    stalls.push({
+      x: bx,
+      y: p.y,
+      z: bz,
+      yaw: p.yaw,
+      depth,
+      width,
+      height,
+      sponsor: stallIdx % SPONSOR_NAMES.length,
     });
-    roofXforms.push({
-      x: bx, y: p.y + 3.8, z: bz,
-      sx: 8.2, sy: 0.26, sz: 5.2, rotY: p.yaw,
-    });
+    stallIdx++;
   }
-  addInst(boxXforms, boxMat, true);
-  addInst(roofXforms, roofMat, true);
 
-  // Low outer pit wall stubs (outside spur — never on race asphalt)
-  const wallXforms: typeof dashXforms = [];
-  let nextWall = -1;
-  for (const p of spur) {
-    if (p.s < nextWall) continue;
-    nextWall = p.s + 5.2;
-    const nx = Math.cos(p.yaw);
-    const nz = -Math.sin(p.yaw);
-    const wx = p.x + nx * (halfPit + 0.5);
-    const wz = p.z + nz * (halfPit + 0.5);
-    if (intersectsRoadRibbon(pts, wx, wz, 0.5, 0.4)) continue;
-    wallXforms.push({
-      x: wx, y: p.y + 0.6, z: wz,
-      sx: 0.28, sy: 1.1, sz: 4.2, rotY: p.yaw,
+  const backX: typeof dashXforms = [];
+  const sideLX: typeof dashXforms = [];
+  const sideRX: typeof dashXforms = [];
+  const pillarX: typeof dashXforms = [];
+  const roofX: typeof dashXforms = [];
+  const floorX: typeof dashXforms = [];
+  const markX: typeof dashXforms = [];
+  const doorLX: typeof dashXforms = [];
+  const doorRX: typeof dashXforms = [];
+  const fasciaBySponsor: typeof dashXforms[] = SPONSOR_NAMES.map(() => []);
+  const windowX: typeof dashXforms = [];
+
+  for (const st of stalls) {
+    const nx = Math.cos(st.yaw);
+    const nz = -Math.sin(st.yaw);
+    // Local: +X = outer (away from pit), +Z = along track (yaw-aligned box uses rotY=yaw)
+    // Instanced box with rotY=yaw: sx = along-track, sz = lateral depth in our convention?
+    // Existing code used sx=width(along), sz=depth(lateral) with rotY=yaw — keep that.
+    const cy = st.y + st.height * 0.5;
+    // Back wall (outer face of garage)
+    backX.push({
+      x: st.x + nx * (st.depth * 0.42),
+      y: cy,
+      z: st.z + nz * (st.depth * 0.42),
+      sx: st.width * 0.96,
+      sy: st.height,
+      sz: 0.28,
+      rotY: st.yaw,
+    });
+    // Side walls (leave front open toward pit)
+    const sideLat = st.width * 0.48;
+    // Along-track offset for sides: use perpendicular to normal = forward
+    const fx = Math.sin(st.yaw);
+    const fz = Math.cos(st.yaw);
+    for (const sign of [-1, 1]) {
+      const list = sign < 0 ? sideLX : sideRX;
+      list.push({
+        x: st.x + fx * sideLat * sign + nx * (st.depth * 0.05),
+        y: cy,
+        z: st.z + fz * sideLat * sign + nz * (st.depth * 0.05),
+        sx: 0.28,
+        sy: st.height,
+        sz: st.depth * 0.92,
+        rotY: st.yaw,
+      });
+    }
+    // Front pillars framing the opening
+    for (const sign of [-1, 1]) {
+      pillarX.push({
+        x: st.x + fx * (st.width * 0.46) * sign - nx * (st.depth * 0.42),
+        y: st.y + st.height * 0.52,
+        z: st.z + fz * (st.width * 0.46) * sign - nz * (st.depth * 0.42),
+        sx: 0.38,
+        sy: st.height * 1.02,
+        sz: 0.38,
+        rotY: st.yaw,
+      });
+    }
+    // Partial front door panels (open center bay)
+    for (const sign of [-1, 1]) {
+      const list = sign < 0 ? doorLX : doorRX;
+      list.push({
+        x: st.x + fx * (st.width * 0.32) * sign - nx * (st.depth * 0.44),
+        y: st.y + st.height * 0.42,
+        z: st.z + fz * (st.width * 0.32) * sign - nz * (st.depth * 0.44),
+        sx: st.width * 0.22,
+        sy: st.height * 0.78,
+        sz: 0.12,
+        rotY: st.yaw,
+      });
+    }
+    // Roof overhang toward pit
+    roofX.push({
+      x: st.x - nx * 0.35,
+      y: st.y + st.height + 0.12,
+      z: st.z - nz * 0.35,
+      sx: st.width * 1.08,
+      sy: 0.22,
+      sz: st.depth * 1.12,
+      rotY: st.yaw,
+    });
+    // Floor pad
+    floorX.push({
+      x: st.x - nx * 0.15,
+      y: st.y + APRON_Y + 0.02,
+      z: st.z - nz * 0.15,
+      sx: st.width * 0.92,
+      sy: 0.06,
+      sz: st.depth * 0.95,
+      rotY: st.yaw,
+    });
+    // Floor bay markings (center line + stop tee)
+    markX.push({
+      x: st.x - nx * (st.depth * 0.15),
+      y: st.y + APRON_Y + 0.055,
+      z: st.z - nz * (st.depth * 0.15),
+      sx: 0.22,
+      sy: 0.03,
+      sz: st.depth * 0.7,
+      rotY: st.yaw,
+    });
+    markX.push({
+      x: st.x - nx * (st.depth * 0.35),
+      y: st.y + APRON_Y + 0.055,
+      z: st.z - nz * (st.depth * 0.35),
+      sx: st.width * 0.55,
+      sy: 0.03,
+      sz: 0.2,
+      rotY: st.yaw,
+    });
+    // Sponsor fascia above opening
+    fasciaBySponsor[st.sponsor].push({
+      x: st.x - nx * (st.depth * 0.46),
+      y: st.y + st.height * 0.88,
+      z: st.z - nz * (st.depth * 0.46),
+      sx: st.width * 0.85,
+      sy: 0.55,
+      sz: 0.1,
+      rotY: st.yaw,
+    });
+    // Window strips on back wall
+    windowX.push({
+      x: st.x + nx * (st.depth * 0.44),
+      y: st.y + st.height * 0.62,
+      z: st.z + nz * (st.depth * 0.44),
+      sx: st.width * 0.7,
+      sy: st.height * 0.28,
+      sz: 0.08,
+      rotY: st.yaw,
     });
   }
-  addInst(wallXforms, barrierMat, false);
+
+  const windowMat = quality.useLambertScenery
+    ? new THREE.MeshLambertMaterial({
+        color: 0x88b8d8,
+        emissive: 0x224466,
+        emissiveIntensity: 0.35,
+        transparent: true,
+        opacity: 0.75,
+      })
+    : new THREE.MeshStandardMaterial({
+        color: 0x88b8d8,
+        roughness: 0.25,
+        metalness: 0.4,
+        emissive: 0x224466,
+        emissiveIntensity: 0.25,
+        transparent: true,
+        opacity: 0.8,
+      });
+
+  addInst(backX, garageBackMat, true);
+  addInst(sideLX, garageWallMat, true);
+  addInst(sideRX, garageWallMat, true);
+  addInst(pillarX, garagePillarMat, true);
+  addInst(doorLX, garageDoorMat, true);
+  addInst(doorRX, garageDoorMat, true);
+  addInst(roofX, garageRoofMat, true);
+  addInst(floorX, garageFloorMat, false);
+  addInst(markX, garageMarkMat, false);
+  addInst(windowX, windowMat, false);
+  for (let si = 0; si < fasciaBySponsor.length; si++) {
+    addInst(fasciaBySponsor[si], fasciaMats[si], false);
+  }
+
+  // Outer-side Tecpro only (behind / outside garages) — never line the race-facing pit edge
+  {
+    const tecproTex = makeTecproTexture();
+    const tecproMat = quality.useLambertScenery
+      ? new THREE.MeshLambertMaterial({ map: tecproTex, side: THREE.DoubleSide })
+      : new THREE.MeshStandardMaterial({
+          map: tecproTex,
+          metalness: 0.02,
+          roughness: 0.72,
+          side: THREE.DoubleSide,
+        });
+    const capMat = quality.useLambertScenery
+      ? new THREE.MeshLambertMaterial({ color: 0xc81018 })
+      : new THREE.MeshStandardMaterial({ color: 0xc81018, roughness: 0.7, metalness: 0.05 });
+    const wallH = 1.2;
+    const tecproXforms: typeof dashXforms = [];
+    const capXforms: typeof dashXforms = [];
+    let nextWall = -1;
+    for (const p of spur) {
+      // Only along pit-stop / box arm + short buffers — not the whole spur, not inner edge
+      if (p.s < spec.boxStartS - 4 || p.s > spec.boxEndS + 8) continue;
+      if (p.s < nextWall) continue;
+      nextWall = p.s + 3.8;
+      const nx = Math.cos(p.yaw);
+      const nz = -Math.sin(p.yaw);
+      // Outer side: past garage depth
+      const lat = halfPit + 6.4;
+      const wx = p.x + nx * lat;
+      const wz = p.z + nz * lat;
+      if (intersectsRoadRibbon(pts, wx, wz, 0.6, 0.5)) continue;
+      tecproXforms.push({
+        x: wx,
+        y: p.y + wallH * 0.5,
+        z: wz,
+        sx: 0.42,
+        sy: wallH,
+        sz: 3.5,
+        rotY: p.yaw,
+      });
+      capXforms.push({
+        x: wx,
+        y: p.y + wallH + 0.06,
+        z: wz,
+        sx: 0.5,
+        sy: 0.1,
+        sz: 3.5,
+        rotY: p.yaw,
+      });
+    }
+    addInst(tecproXforms, tecproMat, false);
+    addInst(capXforms, capMat, false);
+  }
 
   void left;
   void right;

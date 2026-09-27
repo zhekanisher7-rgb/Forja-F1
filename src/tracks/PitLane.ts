@@ -2,10 +2,11 @@
  * Dedicated pit-lane spur (add-on) near S/F — does NOT reshape race centerlines.
  *
  * Layout (all tracks):
- *  - Main ribbon / Tecpro stay as-built except two RIGHT-side openings
+ *  - Main ribbon / Tecpro stay as-built except RIGHT-side openings at mouths + boxes
  *  - Separate pit asphalt spur peels away in a curved arc (дуга) outside right barriers
- *  - Entry opening before S/F → boxes after S/F → exit opening after start
+ *  - Entry opening before S/F → boxes after S/F (outer Tecpro only) → exit opening
  *  - Mid corridor sits farther from race asphalt; entry/exit curve back to merge
+ *  - Pit-stop Tecpro on outer side only — no double-wall corridor at the boxes
  *
  * Mandatory pit (Quick Race / Tutorial): complete mini-game by end of lap
  * ceil(totalLaps/2). Miss → DQ.
@@ -119,7 +120,11 @@ export function isPitCorridorS(s: number, trackLen: number, spec: PitLaneSpec = 
   return s <= spec.exitAfterSf || s >= trackLen - spec.entryBeforeSf;
 }
 
-/** Right Tecpro gap only at entry / exit mouths — middle wall stays between race and pit. */
+/**
+ * Right Tecpro gaps: entry/exit mouths + box / pit-stop zone.
+ * Mid entry/exit arms keep a race↔pit separator; at the boxes the race wall
+ * opens so Tecpro lives on the outer pit side only (no double corridor).
+ */
 export function isPitTecproGap(
   s: number,
   trackLen: number,
@@ -131,6 +136,8 @@ export function isPitTecproGap(
   if (s >= trackLen - spec.entryOpenLen && s <= trackLen) return true;
   // Exit mouth: first exitOpenLen meters after S/F
   if (s >= 0 && s <= spec.exitOpenLen) return true;
+  // Pit-stop boxes — open race-right Tecpro so only outer pit Tecpro walls this zone
+  if (s >= spec.boxStartS - 2 && s <= spec.boxEndS + 5) return true;
   return false;
 }
 
