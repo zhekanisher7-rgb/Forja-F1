@@ -245,36 +245,53 @@ export const PLAYER_GRID_S = 36;
 /** Longitudinal gap between consecutive grid rows (m along track). */
 const GRID_ROW_GAP = 9.5;
 
-/** Spawn 4 AI opponents with staggered grid slots */
+/** Allowed opponent counts in race setup (persisted via MainMenu). */
+export const OPPONENT_COUNT_OPTIONS = [4, 8, 12, 16] as const;
+export type OpponentCount = (typeof OPPONENT_COUNT_OPTIONS)[number];
+export const DEFAULT_OPPONENT_COUNT: OpponentCount = 8;
+
+const AI_LIVERY_POOL = [
+  'mercedes',
+  'mclaren',
+  'redbull',
+  'aston',
+  'williams',
+  'alpine',
+  'haas',
+  'audi',
+  'racingbulls',
+  'cadillac',
+  'ferrari',
+] as const;
+
+/** Spawn N AI opponents with staggered F1-style grid slots (player pole at PLAYER_GRID_S). */
 export function createAIGrid(
   track: TrackData,
   playerLiveryId: string,
   weather: WeatherState,
   castShadow: boolean,
+  count: number = DEFAULT_OPPONENT_COUNT,
 ): AICar[] {
-  const pool = [
-    'mercedes',
-    'mclaren',
-    'redbull',
-    'aston',
-    'williams',
-    'alpine',
-    'haas',
-    'audi',
-  ].filter((id) => id !== playerLiveryId);
-
-  const configs: AIDriverConfig[] = [
-    { skill: 0.82, aggression: 0.55, liveryId: pool[0] ?? 'mercedes' },
-    { skill: 0.68, aggression: 0.4, liveryId: pool[1] ?? 'mclaren' },
-    { skill: 0.55, aggression: 0.35, liveryId: pool[2] ?? 'redbull' },
-    { skill: 0.42, aggression: 0.25, liveryId: pool[3] ?? 'williams' },
-  ];
+  const n = Math.max(1, Math.min(16, Math.round(count)));
+  const pool = AI_LIVERY_POOL.filter((id) => id !== playerLiveryId);
+  // Cycle liveries if field > pool size
+  const configs: AIDriverConfig[] = [];
+  for (let i = 0; i < n; i++) {
+    const t = n <= 1 ? 1 : i / (n - 1);
+    const skill = 0.88 - t * 0.48; // 0.88 … ~0.40
+    const aggression = 0.58 - t * 0.32;
+    configs.push({
+      skill,
+      aggression,
+      liveryId: pool[i % pool.length] ?? 'mercedes',
+    });
+  }
 
   // F1-style 2-wide grid behind the player. Player is pole (left) at PLAYER_GRID_S.
   // Slot i → one car length+ behind previous; alternate left/right.
   // IMPORTANT: never clamp all AI onto the same s (old Math.max(0.6, …) stacked them).
   return configs.map((cfg, i) => {
-    const row = i + 1; // 1..4 behind pole
+    const row = i + 1; // 1..N behind pole
     const startS = Math.max(1.5, PLAYER_GRID_S - row * GRID_ROW_GAP);
     // Odd rows start right of center, even left — clears the pole lane
     const lateral = row % 2 === 1 ? 0.78 : -0.78;

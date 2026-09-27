@@ -98,7 +98,10 @@ export function resolveCarPair(a: VehicleState, b: VehicleState, opts?: ResolveP
   return impact;
 }
 
-/** Player vs all AI (player power protected), then AI–AI pairs. */
+/**
+ * Player vs all AI (player power protected), then nearby AI–AI pairs only.
+ * Large fields (12–16) skip distant AI–AI pairs to keep collision cost O(n)ish.
+ */
 export function resolveFieldCollisions(
   player: VehicleState | null,
   opponents: VehicleState[],
@@ -108,9 +111,19 @@ export function resolveFieldCollisions(
       resolveCarPair(player, o, { protectA: true });
     }
   }
+  // Gate AI–AI by XZ distance — full O(n²) melts FPS at 16 cars
+  const maxPairDist = opponents.length > 10 ? 14 : opponents.length > 6 ? 18 : 28;
+  const maxPairDistSq = maxPairDist * maxPairDist;
   for (let i = 0; i < opponents.length; i++) {
+    const a = opponents[i];
+    if (a.finished) continue;
     for (let j = i + 1; j < opponents.length; j++) {
-      resolveCarPair(opponents[i], opponents[j]);
+      const b = opponents[j];
+      if (b.finished) continue;
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      if (dx * dx + dz * dz > maxPairDistSq) continue;
+      resolveCarPair(a, b);
     }
   }
 }

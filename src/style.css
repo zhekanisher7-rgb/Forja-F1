@@ -590,3 +590,145 @@ canvas#game-canvas {
   pointer-events: none;
 }
 .hud-fps.hidden { display: none; }
+
+/* ---- Pit hint (HUD) ---- */
+.pit-hint {
+  position: absolute;
+  bottom: 180px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  letter-spacing: 0.25em;
+  color: #ffe08a;
+  background: rgba(20, 12, 0, 0.72);
+  border: 1px solid rgba(255, 200, 80, 0.55);
+  padding: 0.4rem 1.1rem;
+  border-radius: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+  z-index: 6;
+  text-transform: uppercase;
+}
+.pit-hint.show { opacity: 1; }
+.pit-hint.inbox {
+  color: #fff;
+  border-color: rgba(0, 210, 190, 0.7);
+  box-shadow: 0 0 14px rgba(0, 210, 190, 0.35);
+  animation: fuelPulse 0.9s ease-in-out infinite alternate;
+}
+
+.bar-fill.damage { background: linear-gradient(90deg, #2ecc71, #f1c40f, #e10600); }
+
+/* ---- Pit-stop mini-game ---- */
+#pit-stop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 40;
+  pointer-events: auto;
+}
+#pit-stop.hidden { display: none; }
+
+.pit-panel {
+  width: min(420px, 92vw);
+  background: linear-gradient(160deg, rgba(18, 18, 24, 0.96), rgba(28, 22, 18, 0.96));
+  border: 1px solid rgba(255, 200, 80, 0.35);
+  border-radius: 10px;
+  padding: 1.25rem 1.4rem 1.1rem;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+}
+.pit-title {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  letter-spacing: 0.18em;
+  color: #ffe08a;
+  text-align: center;
+}
+.pit-sub {
+  text-align: center;
+  color: var(--f1-muted);
+  font-size: 0.78rem;
+  margin: 0.25rem 0 0.9rem;
+}
+.pit-slots { display: flex; flex-direction: column; gap: 0.45rem; margin-bottom: 0.9rem; }
+.pit-slot {
+  display: grid;
+  grid-template-columns: 2.2rem 1fr 1.4rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.pit-slot.current {
+  border-color: rgba(0, 210, 190, 0.7);
+  background: rgba(0, 210, 190, 0.1);
+}
+.pit-slot.ok, .pit-slot.ok-slow {
+  border-color: rgba(46, 204, 113, 0.55);
+  background: rgba(46, 204, 113, 0.12);
+  opacity: 0.85;
+  cursor: default;
+}
+.pit-slot.ok-slow { border-color: rgba(241, 196, 15, 0.55); }
+.pit-key {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  text-align: center;
+  padding: 0.2rem 0;
+}
+.pit-label { font-size: 0.95rem; }
+.pit-status { text-align: right; color: var(--f1-accent); font-weight: 700; }
+
+.pit-gauge-wrap { margin-top: 0.35rem; }
+.pit-gauge {
+  position: relative;
+  height: 18px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.pit-green {
+  position: absolute;
+  left: 42%;
+  width: 30%;
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, rgba(46, 204, 113, 0.35), rgba(46, 204, 113, 0.65), rgba(46, 204, 113, 0.35));
+}
+.pit-marker {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 4px;
+  margin-left: -2px;
+  background: #fff;
+  border-radius: 2px;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.7);
+  left: 0%;
+}
+.pit-gauge-hint {
+  margin-top: 0.45rem;
+  font-size: 0.8rem;
+  color: #ddd;
+  text-align: center;
+}
+.pit-help {
+  margin-top: 0.75rem;
+  font-size: 0.72rem;
+  color: var(--f1-muted);
+  text-align: center;
+  letter-spacing: 0.02em;
+}

@@ -51,6 +51,8 @@ export class HUD {
       <div class="lock-hint" id="lock-hint">БЛОКИРОВКА КОЛЁС</div>
       <div class="fuel-empty-hint" id="fuel-empty">НЕТ ТОПЛИВА</div>
       <div class="racing-line-hint hidden" id="line-hint">● ГОНОЧНАЯ ЛИНИЯ</div>
+      <div class="pit-hint" id="pit-hint">Пит</div>
+      <div class="bar-row hud-damage" style="display:none"><span>УРОН</span><div class="bar-track"><div class="bar-fill damage" id="bar-damage"></div></div><span id="dmg-pct">0%</span></div>
     `;
     this.minimap = this.el.querySelector('#minimap') as HTMLCanvasElement;
   }
@@ -84,6 +86,16 @@ export class HUD {
 
   hide(): void {
     this.el.classList.add('hidden');
+    this.setPitHint(false);
+  }
+
+  /** Near pit entry — show «Пит» cue */
+  setPitHint(show: boolean, inBox = false): void {
+    const el = this.el.querySelector('#pit-hint') as HTMLElement | null;
+    if (!el) return;
+    el.classList.toggle('show', show);
+    el.classList.toggle('inbox', inBox);
+    el.textContent = inBox ? 'Пит · остановитесь' : 'Пит';
   }
 
   update(
@@ -116,6 +128,12 @@ export class HUD {
     (this.el.querySelector('#tires-pct') as HTMLElement).textContent = `${tirePct}%`;
     (this.el.querySelector('#fuel-pct') as HTMLElement).textContent = `${fuelPct}%`;
     (this.el.querySelector('#ers-pct') as HTMLElement).textContent = `${ersPct}%`;
+
+    const dmgPct = Math.round(state.damage * 100);
+    const dmgBar = this.el.querySelector('#bar-damage') as HTMLElement | null;
+    const dmgLabel = this.el.querySelector('#dmg-pct') as HTMLElement | null;
+    if (dmgBar) dmgBar.style.width = `${dmgPct}%`;
+    if (dmgLabel) dmgLabel.textContent = `${dmgPct}%`;
 
     const fuelEmpty = state.fuel <= 0;
     const fuelRow = this.el.querySelector('#bar-fuel')?.parentElement?.parentElement as HTMLElement | null;

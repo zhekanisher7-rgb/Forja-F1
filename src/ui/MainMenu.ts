@@ -8,6 +8,11 @@ import {
   DEFAULT_GRAPHICS,
 } from '../render/GraphicsQuality';
 import { TRACK_OPTIONS, type TrackId } from '../tracks';
+import {
+  OPPONENT_COUNT_OPTIONS,
+  DEFAULT_OPPONENT_COUNT,
+  type OpponentCount,
+} from '../ai/AIDriver';
 
 export type GameMode = 'quick' | 'timetrial' | 'tutorial';
 
@@ -22,6 +27,42 @@ export interface RaceSettings {
   tires: TireCompound;
   laps: number;
   trackId: TrackId;
+  /** AI cars in quick/tutorial (4 / 8 / 12 / 16) */
+  opponentCount: OpponentCount;
+}
+
+const RACE_PREFS_KEY = 'forja-f1-race-prefs';
+
+function loadRacePrefs(): Partial<Pick<RaceSettings, 'opponentCount' | 'laps' | 'trackId' | 'difficulty'>> {
+  try {
+    const raw = localStorage.getItem(RACE_PREFS_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) as Partial<RaceSettings>;
+  } catch {
+    return {};
+  }
+}
+
+export function saveRacePrefs(s: RaceSettings): void {
+  try {
+    localStorage.setItem(
+      RACE_PREFS_KEY,
+      JSON.stringify({
+        opponentCount: s.opponentCount,
+        laps: s.laps,
+        trackId: s.trackId,
+        difficulty: s.difficulty,
+      }),
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+function clampOpponentCount(n: unknown): OpponentCount {
+  const v = Number(n);
+  if ((OPPONENT_COUNT_OPTIONS as readonly number[]).includes(v)) return v as OpponentCount;
+  return DEFAULT_OPPONENT_COUNT;
 }
 
 export type MenuCallbacks = {
@@ -56,18 +97,7 @@ const TIRE_LABELS: Record<TireCompound, string> = {
 
 export class MainMenu {
   el: HTMLDivElement;
-  private settings: RaceSettings = {
-    mode: 'quick',
-    difficulty: 'amateur',
-    liveryId: 'ferrari',
-    customPrimary: '#888888',
-    customSecondary: '#222222',
-    customAccent: '#00ff88',
-    weather: 'dry',
-    tires: 'slick',
-    laps: 3,
-    trackId: 'monaco',
-  };
+  private settings: RaceSettings;
   private graphics: GraphicsSettings;
   private view: 'main' | 'race' | 'settings' | 'credits' = 'main';
   private cbs: MenuCallbacks;
@@ -75,6 +105,20 @@ export class MainMenu {
   constructor(parent: HTMLElement, cbs: MenuCallbacks, graphics?: GraphicsSettings) {
     this.cbs = cbs;
     this.graphics = { ...(graphics ?? DEFAULT_GRAPHICS) };
+    const prefs = loadRacePrefs();
+    this.settings = {
+      mode: 'quick',
+      difficulty: (prefs.difficulty as Difficulty) || 'amateur',
+      liveryId: 'ferrari',
+      customPrimary: '#888888',
+      customSecondary: '#222222',
+      customAccent: '#00ff88',
+      weather: 'dry',
+      tires: 'slick',
+      laps: typeof prefs.laps === 'number' ? prefs.laps : 3,
+      trackId: (prefs.trackId as TrackId) || 'monaco',
+      opponentCount: clampOpponentCount(prefs.opponentCount),
+    };
     this.el = document.createElement('div');
     this.el.id = 'main-menu';
     this.el.className = 'screen';
@@ -159,6 +203,12 @@ export class MainMenu {
             <label>Круги</label>
             <select id="laps">
               ${[1, 2, 3, 5, 8].map((n) => `<option value="${n}" ${this.settings.laps === n ? 'selected' : ''}>${n}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-row" id="opp-row">
+            <label>Соперники (ИИ)</label>
+            <select id="opponents">
+              ${OPPONENT_COUNT_OPTIONS.map((n) => `<option value="${n}" ${this.settings.opponentCount === n ? 'selected' : ''}>${n}</option>`).join('')}
             </select>
           </div>
           <button class="menu-btn" data-a="go">К гонке →</button>
@@ -262,6 +312,14 @@ export class MainMenu {
     if (tires) tires.addEventListener('change', () => { this.settings.tires = tires.value as TireCompound; this.renderTechSpecs(); });
     const laps = this.el.querySelector('#laps') as HTMLSelectElement | null;
     if (laps) laps.addEventListener('change', () => (this.settings.laps = Number(laps.value)));
+    const opp = this.el.querySelector('#opponents') as HTMLSelectElement | null;
+    if (opp) {
+      opp.addEventListener('change', () => {
+        this.settings.opponentCount = clampOpponentCount(opp.value);
+      });
+    }
+    const oppRow = this.el.querySelector('#opp-row') as HTMLElement | null;
+    if (oppRow) oppRow.style.display = this.settings.mode === 'timetrial' ? 'none' : 'block';
     const cp = this.el.querySelector('#c-prim') as HTMLInputElement | null;
     const cs = this.el.querySelector('#c-sec') as HTMLInputElement | null;
     const ca = this.el.querySelector('#c-acc') as HTMLInputElement | null;
@@ -349,6 +407,7 @@ export class MainMenu {
         this.render();
         break;
       case 'go':
+        saveRacePrefs(this.settings);
         this.cbs.onStart({ ...this.settings });
         break;
     }

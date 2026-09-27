@@ -515,6 +515,7 @@ export function createTrackMesh(
     addHarbor(root, pts, quality);
   }
   addScenery(root, pts, left, right, quality, night);
+  addPitLane(root, pts, left, right, quality);
 
   // Start/finish stripe — quiet chequered decal (never a glowing white ribbon)
   const sfMat = new THREE.MeshStandardMaterial({
@@ -1960,8 +1961,8 @@ function addScenery(
   let tCount = 0;
   let lCount = 0;
 
-  // Distance-based stride (~step * 3.2 m) so dense Catmull-Rom samples don't balloon prop counts
-  const strideM = Math.max(6, step * 3.2);
+  // Distance-based stride — Medium densifies vs prior 3.2×step without Ultra spam
+  const strideM = Math.max(5.2, step * (quality.maxBuildings >= 100 ? 2.75 : 3.2));
   let nextS = 0;
   const indices: number[] = [];
   for (let i = 0; i < pts.length - 1; i++) {
@@ -1977,8 +1978,9 @@ function addScenery(
     const edge = useLeft ? left : right;
     const side = useLeft ? -1 : 1;
 
-    // --- Buildings: far offset, large half-extent ---
-    if (ii % 2 === 0 && bCount < quality.maxBuildings) {
+    // --- Buildings: far offset, large half-extent (denser on Medium+) ---
+    const bldgEvery = quality.maxBuildings >= 100 ? 1 : 2;
+    if (ii % bldgEvery === 0 && bCount < quality.maxBuildings) {
       const h = 8 + (i % 9) * 2.4 + (i % 3) * 1.1;
       const w = 4.5 + (i % 5) * 1.15;
       const d = 4.5 + ((i + 2) % 5) * 1.05;
@@ -2052,12 +2054,13 @@ function addScenery(
     }
 
     // --- Trees / palms / deciduous bushes: denser bands clear of barriers ---
-    if (ii % 5 !== 1 && tCount < quality.maxTrees) {
+    if (tCount < quality.maxTrees) {
       const isPalm = ii % 5 === 1;
       const isBush = !isPalm && ii % 7 === 3;
-      const isPine = !isPalm && !isBush && ii % 2 === 0;
-      if (isPalm || isPine || isBush) {
-        const halfToward = isPalm ? 1.6 : isBush ? 1.1 : 1.4;
+      const isPine = !isPalm && !isBush && (ii % 2 === 0 || quality.maxTrees >= 140);
+      const isExtra = !isPalm && !isBush && !isPine && quality.maxTrees >= 140 && ii % 3 === 0;
+      if (isPalm || isPine || isBush || isExtra) {
+        const halfToward = isPalm ? 1.6 : isBush || isExtra ? 1.1 : 1.4;
         const extra = 0.5 + (i % 2) * 0.8;
         const placed = placeAlongEdgeNormal(pts, edge, i, side, halfToward, margin, extra);
         if (placed && acceptPropY(pts, placed.x, placed.z, placed.y)) {
@@ -2210,11 +2213,12 @@ function addScenery(
   const shrubs: Xform[] = [];
   const flowers: Xform[] = [];
   const cliffs: Xform[] = [];
+  const berms: Xform[] = [];
   const flowerColors = [0xc45a6a, 0xd4a03a, 0x6a8cc4, 0xc4783a, 0x8a5a9a, 0xd47868];
   // Tighter stride fills maxDecor budget with more variety (still road-clear)
   const rockStride = Math.max(
-    quality.maxDecor >= 60 ? 9 : quality.maxDecor >= 40 ? 11 : 13,
-    strideM * (quality.maxDecor >= 48 ? 1.55 : 1.85),
+    quality.maxDecor >= 70 ? 7.5 : quality.maxDecor >= 60 ? 9 : quality.maxDecor >= 40 ? 11 : 13,
+    strideM * (quality.maxDecor >= 48 ? 1.4 : 1.85),
   );
   let nextRockS = 8;
   let decorCount = 0;
@@ -2224,7 +2228,7 @@ function addScenery(
     const useLeft = i % 2 === 0;
     const edge = useLeft ? left : right;
     const side = useLeft ? -1 : 1;
-    const mode = i % 4;
+    const mode = quality.maxDecor >= 56 ? i % 5 : i % 4;
     if (mode === 0) {
       const placed = placeAlongEdgeNormal(pts, edge, i, side, 1.2, margin + 2.5, 4 + (i % 3));
       if (placed && acceptPropY(pts, placed.x, placed.z, placed.y)) {
@@ -2301,6 +2305,22 @@ function addScenery(
           decorCount++;
         }
       }
+    } else if (mode === 4 && quality.maxDecor >= 56) {
+      // Grass / earth berms — low mounds clear of asphalt
+      const placed = placeAlongEdgeNormal(pts, edge, i, side, 1.8, margin + 2.8, 3.5 + (i % 3));
+      if (placed && acceptPropY(pts, placed.x, placed.z, placed.y)) {
+        const { clearance } = nearestEdgeClearance(pts, placed.x, placed.z);
+        if (clearance < BARRIER_OUT + margin + 1.8) continue;
+        const bh = 0.9 + (i % 4) * 0.35;
+        const bw = 4.5 + (i % 3) * 1.2;
+        berms.push({
+          x: placed.x, y: placed.y + bh * 0.35, z: placed.z,
+          sx: bw, sy: bh, sz: 2.2 + (i % 2) * 0.6,
+          rotY: Math.atan2(placed.nx, placed.nz),
+          color: (i % 2 === 0) ? 0x3a6a32 : 0x4a5a38,
+        });
+        decorCount++;
+      }
     }
   }
 
@@ -2366,7 +2386,117 @@ function addScenery(
   addInstanced(shrubGeo, shrubMat, shrubs, false);
   addInstanced(flowerGeo, flowerMat, flowers, true);
   addInstanced(cliffGeo, cliffMat, cliffs, false);
+  const bermMat = makeSceneryMat(0x3a6a32, quality);
+  const bermGeo = new THREE.SphereGeometry(1, 6, 4);
+  addInstanced(bermGeo, bermMat, berms, true);
 
+  root.add(group);
+}
+
+
+/** Pit lane / boxes strip near S/F (right side) — shared across tracks lacking pit geometry. */
+function addPitLane(
+  root: THREE.Group,
+  pts: TrackPoint[],
+  left: THREE.Vector3[],
+  right: THREE.Vector3[],
+  quality: QualityProfile,
+): void {
+  if (pts.length < 8) return;
+  const group = new THREE.Group();
+  group.name = 'pitLane';
+  const total = pts[pts.length - 1].s;
+  const asphaltMat = quality.useLambertScenery
+    ? new THREE.MeshLambertMaterial({ color: 0x3a3a42 })
+    : new THREE.MeshStandardMaterial({ color: 0x3a3a42, roughness: 0.92, metalness: 0.05 });
+  const lineMat = new THREE.MeshBasicMaterial({ color: 0xe8e0c8 });
+  const boxMat = quality.useLambertScenery
+    ? new THREE.MeshLambertMaterial({ color: 0x5a6068 })
+    : new THREE.MeshStandardMaterial({ color: 0x5a6068, roughness: 0.85, metalness: 0.1 });
+  const roofMat = makeSceneryMat(0xb02020, quality);
+
+  const inPitS = (s: number) => s <= 58 || s >= total * 0.91;
+  const dummy = new THREE.Object3D();
+  const apronXforms: { x: number; y: number; z: number; sx: number; sy: number; sz: number; rotY: number }[] = [];
+  const boxXforms: typeof apronXforms = [];
+  const roofXforms: typeof apronXforms = [];
+
+  let next = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p = pts[i];
+    if (!inPitS(p.s)) continue;
+    if (p.s + 1e-3 < next) continue;
+    next = p.s + 4.2;
+    // Place apron outside right Tecpro — never on racing asphalt
+    const halfToward = 2.2;
+    const placed = placeAlongEdgeNormal(pts, right, i, 1, halfToward, quality.sceneryMargin * 0.35, 1.2);
+    if (!placed) continue;
+    if (!acceptPropY(pts, placed.x, placed.z, placed.y, 1.5)) continue;
+    const rotY = Math.atan2(placed.nx, placed.nz);
+    apronXforms.push({
+      x: placed.x,
+      y: placed.y + 0.04,
+      z: placed.z,
+      sx: 5.5,
+      sy: 0.08,
+      sz: 3.8,
+      rotY,
+    });
+    // Garage boxes every other segment
+    if (apronXforms.length % 2 === 0 && quality.maxDecor >= 20) {
+      const bx = placed.x + placed.nx * 4.5;
+      const bz = placed.z + placed.nz * 4.5;
+      if (!intersectsRoadRibbon(pts, bx, bz, 3.5, quality.sceneryMargin)) {
+        boxXforms.push({
+          x: bx, y: placed.y + 1.6, z: bz,
+          sx: 6.5, sy: 3.2, sz: 4.2,
+          rotY,
+        });
+        roofXforms.push({
+          x: bx, y: placed.y + 3.35, z: bz,
+          sx: 7.0, sy: 0.25, sz: 4.6,
+          rotY,
+        });
+      }
+    }
+  }
+
+  const unit = new THREE.BoxGeometry(1, 1, 1);
+  const addList = (
+    list: typeof apronXforms,
+    mat: THREE.Material,
+    cast: boolean,
+  ) => {
+    if (!list.length) return;
+    const mesh = new THREE.InstancedMesh(unit, mat, list.length);
+    mesh.castShadow = cast && quality.sceneryCastShadow;
+    mesh.receiveShadow = true;
+    for (let i = 0; i < list.length; i++) {
+      const t = list[i];
+      dummy.position.set(t.x, t.y, t.z);
+      dummy.scale.set(t.sx, t.sy, t.sz);
+      dummy.rotation.set(0, t.rotY, 0);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    group.add(mesh);
+  };
+
+  addList(apronXforms, asphaltMat, false);
+  addList(boxXforms, boxMat, true);
+  addList(roofXforms, roofMat, true);
+
+  // White pit-entry dashed line on apron start marker
+  if (apronXforms.length > 0) {
+    const a0 = apronXforms[0];
+    const marker = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.12, 2.8), lineMat);
+    marker.position.set(a0.x, a0.y + 0.08, a0.z);
+    marker.rotation.y = a0.rotY;
+    group.add(marker);
+  }
+
+  void left; // keep signature parity with scenery helpers
   root.add(group);
 }
 

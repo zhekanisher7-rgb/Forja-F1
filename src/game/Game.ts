@@ -31,8 +31,9 @@ import { HUD } from '../ui/HUD';
 import { TutorialOverlay } from '../ui/Tutorial';
 import { ResultsScreen } from '../ui/Results';
 import { getLivery, type Livery } from '../vehicles/Liveries';
-import { createAIGrid, updateAICar, PLAYER_GRID_S, type AICar } from '../ai/AIDriver';
+import { createAIGrid, updateAICar, PLAYER_GRID_S, DEFAULT_OPPONENT_COUNT, type AICar } from '../ai/AIDriver';
 import { resolveFieldCollisions } from '../physics/CarCollision';
+import { PitStopUI, inPitApproach } from '../ui/PitStop';
 import {
   computeRacePosition,
   selfVerifyRaceStanding,
@@ -51,7 +52,12 @@ export class Game {
   private hud: HUD;
   private tutorial: TutorialOverlay;
   private results: ResultsScreen;
+  private pitStop: PitStopUI;
   private countdownEl: HTMLDivElement;
+  /** True while player pit mini-game is open (car held, race clock runs). */
+  private pitBusy = false;
+  /** Seconds before another pit entry is allowed (prevents re-open loop). */
+  private pitCooldown = 0;
 
   private track: TrackData = getTrackById('monaco');
   private trackRoot: THREE.Group | null = null;
@@ -125,6 +131,7 @@ export class Game {
 
     this.hud = new HUD(app);
     this.results = new ResultsScreen(app, () => this.returnToMenu());
+    this.pitStop = new PitStopUI(app);
 
     this.countdownEl = document.createElement('div');
     this.countdownEl.id = 'countdown';
@@ -188,6 +195,8 @@ export class Game {
     this.aiCars = [];
     this.vehicle = null;
     this.physics = null;
+    this.pitBusy = false;
+    this.pitStop.close();
   }
 
   private disposeObject(obj: THREE.Object3D): void {
@@ -269,13 +278,19 @@ export class Game {
       ...PLAYER_VEHICLE_SPEC,
     });
 
+    this.pitBusy = false;
+    this.pitCooldown = 0;
+    this.pitStop.close();
+
     // AI opponents (skip in time-trial solo focus? keep them for quick/tutorial)
     if (settings.mode !== 'timetrial') {
+      const oppCount = settings.opponentCount ?? DEFAULT_OPPONENT_COUNT;
       this.aiCars = createAIGrid(
         this.track,
         settings.liveryId,
         weather,
         castShadow,
+        oppCount,
       ); // castShadow = carCastShadow || sceneryCastShadow
       this.aiLapArmed = this.aiCars.map(() => false);
       for (const ai of this.aiCars) {
@@ -463,6 +478,20 @@ export class Game {
 
   private updateRacing(dt: number): void {
     if (!this.vehicle || !this.physics || !this.settings) return;
+
+    if (this.pitCooldown > 0) this.pitCooldown = Math.max(0, this.pitCooldown - dt);
+
+    // Pit mini-game: hold car, keep race clock + AI; player repairs manually
+    if (this.pitBusy && this.pitStop.isOpen) {
+      this.vehicle.speed = 0;
+      this.input.resetAnalogs();
+      this.pitStop.update(dt);
+      this.raceTimeMs += dt * 1000;
+      this.vehicle.currentLapMs += dt * 1000;
+      this.updateAIOnly(dt);
+      return;
+    }
+
     const input = this.input.update(dt);
     if (input.cameraToggle) this.cameraCtrl.toggle();
 
@@ -474,13 +503,35 @@ export class Game {
       this.vehicle.y,
     );
     const halfW = proj.width / 2;
-    // Hard clamp at Tecpro face (TRACK_BARRIER_OUT) — visual barriers = physics walls
+
+    // Pit approach / box — right side near S/F; hint + optional entry
+    const pit = inPitApproach(
+      proj.s,
+      this.track.length,
+      proj.lateral,
+      halfW,
+      this.vehicle.speed,
+    );
+    this.hud.setPitHint(pit.near || pit.inBox, pit.inBox && this.pitCooldown <= 0);
+    if (
+      pit.inBox &&
+      !this.pitBusy &&
+      this.pitCooldown <= 0 &&
+      this.settings.mode !== 'timetrial'
+    ) {
+      this.openPlayerPit();
+      return;
+    }
+
+    // Hard clamp at Tecpro face — allow extra apron on right in pit corridor
+    const pitApron =
+      proj.s <= 55 || proj.s >= this.track.length * 0.92 ? 6.5 : 0;
     const clamped = applyTrackBarrierClamp(
       this.vehicle.x,
       this.vehicle.z,
       this.vehicle.yaw,
       proj.lateral,
-      halfW,
+      halfW + (proj.lateral > 0 ? pitApron : 0),
     );
     let wallHit = clamped.wallHit;
     if (wallHit > 0) {
@@ -554,7 +605,51 @@ export class Game {
     this.vehicle.distanceAlong = s;
     this.raceTimeMs += dt * 1000;
 
-    // AI update — throttled to profile Hz (mesh still advances via larger step)
+    // AI + collisions (shared path with pit-hold mode)
+    this.updateAIOnly(dt);
+
+    if (this.carMesh) setDrsVisual(this.carMesh, this.vehicle.drsOpen);
+  }
+
+  /** Forward-only along-track meters (ignores reverse / S/F oscillation). */
+  private forwardProgress(prevS: number, nextS: number, total: number): number {
+    if (total <= 1e-3) return 0;
+    let ds = nextS - prevS;
+    // Forward wrap across S/F (end → start)
+    if (ds < -total * 0.5) ds += total;
+    // Backward wrap or reverse motion — do not credit
+    if (ds > total * 0.5) ds -= total;
+    return ds > 0 ? ds : 0;
+  }
+
+
+  private openPlayerPit(): void {
+    if (!this.vehicle || this.pitBusy) return;
+    this.pitBusy = true;
+    this.vehicle.speed = 0;
+    this.hud.setPitHint(true, true);
+    this.pitStop.open((result) => {
+      if (!this.vehicle) return;
+      if (result.tires) {
+        this.vehicle.tires.wear = 0;
+        this.vehicle.tires.temperature = 0.65;
+      }
+      if (result.damage) {
+        this.vehicle.damage = 0;
+      }
+      if (result.fuel) {
+        this.vehicle.fuel = Math.min(1, this.vehicle.fuel + 0.55);
+      }
+      this.pitBusy = false;
+      this.pitCooldown = 8; // leave the box before re-entry
+      this.hud.setPitHint(false);
+    });
+  }
+
+  /** AI + collisions only (used while player is in pit UI). */
+  private updateAIOnly(dt: number): void {
+    if (!this.vehicle) return;
+    const total = this.track.length;
     const aiHz = profileFor(this.graphics.tier).aiUpdateHz;
     const aiInterval = 1 / Math.max(10, aiHz);
     this.aiAccum += dt;
@@ -562,9 +657,18 @@ export class Game {
       const aiDt = Math.min(0.08, this.aiAccum);
       this.aiAccum = 0;
       const raceAge = this.raceTimeMs / 1000;
+      const playerS = this.vehicle.distanceAlong;
       for (let i = 0; i < this.aiCars.length; i++) {
         const ai = this.aiCars[i];
         ai.raceAgeSec = raceAge;
+        // Distant AI: cheaper half-rate skip (mesh still synced each frame)
+        if (this.aiCars.length >= 12) {
+          let ds = Math.abs(ai.vehicle.distanceAlong - playerS);
+          if (ds > total * 0.5) ds = total - ds;
+          if (ds > 140 && i % 2 === (Math.floor(raceAge * 2) % 2)) {
+            continue;
+          }
+        }
         const prevS = ai.vehicle.distanceAlong;
         updateAICar(ai, this.track, aiDt);
         const ns = ai.vehicle.distanceAlong;
@@ -592,25 +696,10 @@ export class Game {
         }
       }
     }
-
-    // Car–car hitboxes: player↔AI and AI↔AI — bounce/slow, no ghosting
     resolveFieldCollisions(
       this.vehicle,
       this.aiCars.map((ai) => ai.vehicle),
     );
-
-    if (this.carMesh) setDrsVisual(this.carMesh, this.vehicle.drsOpen);
-  }
-
-  /** Forward-only along-track meters (ignores reverse / S/F oscillation). */
-  private forwardProgress(prevS: number, nextS: number, total: number): number {
-    if (total <= 1e-3) return 0;
-    let ds = nextS - prevS;
-    // Forward wrap across S/F (end → start)
-    if (ds < -total * 0.5) ds += total;
-    // Backward wrap or reverse motion — do not credit
-    if (ds > total * 0.5) ds -= total;
-    return ds > 0 ? ds : 0;
   }
 
   private finishRace(): void {
