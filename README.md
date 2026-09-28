@@ -24,6 +24,28 @@ npm run preview   # опционально
 
 Только веб (Vite + Three.js). Нативных сборок Win/mac нет.
 
+## Экспорт трасс в Blender (glTF)
+
+Геометрия гоночного асфальта + Tecpro/барьеры + пит-шпор (дуга) выгружается тем же path-sampling / edge-miter, что и `TrackMesh`.
+
+```bash
+npm run export-tracks
+```
+
+Файлы (в репозитории и в `dist/` после `npm run build`):
+
+| Файл | Содержимое |
+|------|------------|
+| `public/exports/tracks/monaco.glb` | Монако — асфальт, Tecpro, pit spur |
+| `public/exports/tracks/suzuka.glb` | Сузука |
+| `public/exports/tracks/interlagos.glb` | Интерлагос |
+| `public/exports/tracks/*-centerline.json` | Центрлайн: массив `{x,y,z}` для Curve / rebuild |
+
+**Blender:** File → Import → **glTF 2.0** → выберите `*.glb`.  
+Центрлайн (опционально): импортируйте JSON скриптом / аддоном или постройте Curve по точкам вручную.
+
+Скрипт: `scripts/export-tracks.ts` (Three.js `BufferGeometry` → `GLTFExporter`).
+
 ## Управление
 
 | Клавиша | Действие |
@@ -203,6 +225,7 @@ Anthony Noghes → S/F: непрерывный правый поворот бе�
 
 - Vite + TypeScript
 - Three.js (WebGL)
+- `npm run export-tracks` — glTF/GLB трасс для Blender (`public/exports/tracks/`)
 
 ## Известные ограничения
 
