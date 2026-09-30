@@ -61,6 +61,13 @@ export interface PhysicsConfig {
   dragCd: number;
   downforceCl: number;
   wheelbase: number;
+  /** Garage upgrade multipliers (player only). All default to stock (1 / 200 kW). */
+  gripMul?: number;
+  brakeMul?: number;
+  fuelBurnMul?: number;
+  ersBoostKw?: number;
+  ersDrainMul?: number;
+  ersRegenMul?: number;
 }
 
 /** Shared player chassis — identical in Quick Race and Time Trial (AI must not alter these). */
@@ -150,7 +157,11 @@ export class VehiclePhysics {
 
     const damageMul = 1 - state.damage * 0.45;
     const surfaceWet = this.cfg.weather.type === 'wet' ? 1 : 0;
-    const grip = tireGrip(state.tires, surfaceWet) * this.cfg.weather.gripMultiplier * damageMul;
+    const grip =
+      tireGrip(state.tires, surfaceWet) *
+      this.cfg.weather.gripMultiplier *
+      damageMul *
+      (this.cfg.gripMul ?? 1);
 
     // DRS
     state.drsOpen = input.drs && state.inDrsZone && state.speed > 15;
@@ -161,13 +172,13 @@ export class VehiclePhysics {
     // Exactly 200 kW; drain ~0.125/s → ~8 s full-bar (still usable in QR/TT)
     let ersBoost = 0;
     if (state.fuel > 0 && input.ers && state.ers > 0.01 && state.speed > 5) {
-      ersBoost = PLAYER_VEHICLE_SPEC.ersBoostKw;
-      state.ers = Math.max(0, state.ers - 0.125 * dt);
+      ersBoost = this.cfg.ersBoostKw ?? PLAYER_VEHICLE_SPEC.ersBoostKw;
+      state.ers = Math.max(0, state.ers - 0.125 * (this.cfg.ersDrainMul ?? 1) * dt);
     } else if (state.speed > 20 && input.brake > 0.3) {
       // regen
-      state.ers = Math.min(1, state.ers + 0.04 * dt * input.brake);
+      state.ers = Math.min(1, state.ers + 0.04 * (this.cfg.ersRegenMul ?? 1) * dt * input.brake);
     } else {
-      state.ers = Math.min(1, state.ers + 0.008 * dt);
+      state.ers = Math.min(1, state.ers + 0.008 * (this.cfg.ersRegenMul ?? 1) * dt);
     }
 
     // Gears / reverse
@@ -215,7 +226,7 @@ export class VehiclePhysics {
     let brakeForce = 0;
     const mainBrake = input.brake;
     const engBrake = input.engineBrake * 0.25;
-    const maxBrake = this.cfg.mass * 9.81 * grip * 1.6; // ~14% stronger player brakes
+    const maxBrake = this.cfg.mass * 9.81 * grip * 1.6 * (this.cfg.brakeMul ?? 1); // ~14% stronger player brakes
     brakeForce = (mainBrake + engBrake) * maxBrake;
     state.wheelLock = false;
     if (mainBrake > 0.85 && !this.assists.abs && state.speed > 8) {
@@ -282,7 +293,9 @@ export class VehiclePhysics {
     // Fuel burn — hold ~6 min tank despite higher peak power (do not empty faster).
     if (!outOfFuel) {
       const burn =
-        (0.0005 + input.throttle * 0.00205 + (ersBoost > 0 ? 0.00035 : 0)) * dt;
+        (0.0005 + input.throttle * 0.00205 + (ersBoost > 0 ? 0.00035 : 0)) *
+        (this.cfg.fuelBurnMul ?? 1) *
+        dt;
       state.fuel = Math.max(0, state.fuel - burn);
     } else {
       state.fuel = 0;

@@ -1,5 +1,17 @@
 import { LIVERIES } from '../vehicles/Liveries';
 import { PLAYER_VEHICLE_SPEC, type Difficulty } from '../physics/VehiclePhysics';
+import {
+  RACE_TIERS,
+  TIERS,
+  isRaceTier,
+  saveCareer,
+  type CareerState,
+  type RaceTier,
+} from '../game/Career';
+import type { DuelContext } from '../game/Duel';
+import { upgradedSpec } from '../game/Upgrades';
+import { GarageScreen, coinBadge } from './Garage';
+import { DuelMenu, type DuelStartRequest } from './DuelMenu';
 import type { WeatherType } from '../physics/Weather';
 import type { TireCompound } from '../physics/TireModel';
 import {
@@ -14,7 +26,7 @@ import {
   type OpponentCount,
 } from '../ai/AIDriver';
 
-export type GameMode = 'quick' | 'timetrial' | 'tutorial';
+export type GameMode = 'quick' | 'timetrial' | 'tutorial' | 'duel';
 
 export interface RaceSettings {
   mode: GameMode;
@@ -29,11 +41,15 @@ export interface RaceSettings {
   trackId: TrackId;
   /** AI cars in quick/tutorial (4 / 8 / 12 / 16) */
   opponentCount: OpponentCount;
+  /** Career tier for Quick Race (coins multiplier + AI strength). */
+  tier: RaceTier;
+  /** Set only for mode 'duel' (bet already deducted). */
+  duel?: DuelContext;
 }
 
 const RACE_PREFS_KEY = 'forja-f1-race-prefs';
 
-function loadRacePrefs(): Partial<Pick<RaceSettings, 'opponentCount' | 'laps' | 'trackId' | 'difficulty'>> {
+function loadRacePrefs(): Partial<Pick<RaceSettings, 'opponentCount' | 'laps' | 'trackId' | 'difficulty' | 'tier'>> {
   try {
     const raw = localStorage.getItem(RACE_PREFS_KEY);
     if (!raw) return {};
@@ -52,6 +68,7 @@ export function saveRacePrefs(s: RaceSettings): void {
         laps: s.laps,
         trackId: s.trackId,
         difficulty: s.difficulty,
+        tier: s.tier,
       }),
     );
   } catch {
@@ -99,11 +116,20 @@ export class MainMenu {
   el: HTMLDivElement;
   private settings: RaceSettings;
   private graphics: GraphicsSettings;
-  private view: 'main' | 'race' | 'settings' | 'credits' = 'main';
+  private view: 'main' | 'race' | 'settings' | 'credits' | 'garage' | 'duel' = 'main';
   private cbs: MenuCallbacks;
+  private career: CareerState;
+  private garage: GarageScreen;
+  private duelMenu: DuelMenu;
 
-  constructor(parent: HTMLElement, cbs: MenuCallbacks, graphics?: GraphicsSettings) {
+  constructor(
+    parent: HTMLElement,
+    cbs: MenuCallbacks,
+    graphics: GraphicsSettings | undefined,
+    career: CareerState,
+  ) {
     this.cbs = cbs;
+    this.career = career;
     this.graphics = { ...(graphics ?? DEFAULT_GRAPHICS) };
     const prefs = loadRacePrefs();
     this.settings = {
@@ -118,7 +144,16 @@ export class MainMenu {
       laps: typeof prefs.laps === 'number' ? prefs.laps : 3,
       trackId: (prefs.trackId as TrackId) || 'monaco',
       opponentCount: clampOpponentCount(prefs.opponentCount),
+      tier: isRaceTier(prefs.tier) ? prefs.tier : 'city',
     };
+    const toMain = () => {
+      this.view = 'main';
+      this.render();
+    };
+    this.garage = new GarageScreen(career, toMain);
+    this.duelMenu = new DuelMenu(career, this.settings.trackId, toMain, (req) =>
+      this.startDuel(req),
+    );
     this.el = document.createElement('div');
     this.el.id = 'main-menu';
     this.el.className = 'screen';
@@ -150,7 +185,10 @@ export class MainMenu {
         <div class="logo">Forja F1 2026</div>
         <div class="logo-sub">Фан-симулятор · Фаза 1+</div>
         <div class="menu-panel">
+          <div class="panel-top"><span class="panel-sub">Баланс</span>${coinBadge(this.career.coins)}</div>
           <button class="menu-btn" data-a="quick">Быстрая гонка</button>
+          <button class="menu-btn" data-a="duel">Дуэль 1 на 1</button>
+          <button class="menu-btn" data-a="garage">Гараж / Прокачка</button>
           <button class="menu-btn" data-a="timetrial">Заезд на время</button>
           <button class="menu-btn" data-a="tutorial">Обучение</button>
           <button class="menu-btn secondary" data-a="settings">Настройки</button>
@@ -205,6 +243,12 @@ export class MainMenu {
               ${[1, 2, 3, 5, 8].map((n) => `<option value="${n}" ${this.settings.laps === n ? 'selected' : ''}>${n}</option>`).join('')}
             </select>
           </div>
+          <div class="form-row" id="tier-row">
+            <label>Лига (награда в монетах)</label>
+            <select id="tier">
+              ${RACE_TIERS.map((t) => `<option value="${t}" ${this.settings.tier === t ? 'selected' : ''}>${TIERS[t].nameRu} — ×${TIERS[t].coinMul} · ${TIERS[t].descRu}</option>`).join('')}
+            </select>
+          </div>
           <div class="form-row" id="opp-row">
             <label>Соперники (ИИ)</label>
             <select id="opponents">
@@ -226,6 +270,12 @@ export class MainMenu {
       }
       this.toggleCustom();
       this.renderTechSpecs();
+    } else if (this.view === 'garage') {
+      this.garage.render(this.el);
+      return;
+    } else if (this.view === 'duel') {
+      this.duelMenu.render(this.el);
+      return;
     } else if (this.view === 'settings') {
       this.el.innerHTML = `
         <div class="logo" style="font-size:1.8rem">Настройки</div>
@@ -320,6 +370,13 @@ export class MainMenu {
     }
     const oppRow = this.el.querySelector('#opp-row') as HTMLElement | null;
     if (oppRow) oppRow.style.display = this.settings.mode === 'timetrial' ? 'none' : 'block';
+    const tierRow = this.el.querySelector('#tier-row') as HTMLElement | null;
+    if (tierRow) tierRow.style.display = this.settings.mode === 'quick' ? 'block' : 'none';
+    const tierSel = this.el.querySelector('#tier') as HTMLSelectElement | null;
+    if (tierSel)
+      tierSel.addEventListener('change', () => {
+        if (isRaceTier(tierSel.value)) this.settings.tier = tierSel.value;
+      });
     const cp = this.el.querySelector('#c-prim') as HTMLInputElement | null;
     const cs = this.el.querySelector('#c-sec') as HTMLInputElement | null;
     const ca = this.el.querySelector('#c-acc') as HTMLInputElement | null;
@@ -349,14 +406,24 @@ export class MainMenu {
     const box = this.el.querySelector('#tech-specs') as HTMLElement | null;
     if (!box) return;
     const s = PLAYER_VEHICLE_SPEC;
+    const u = upgradedSpec(this.career.levels);
     const tire = TIRE_LABELS[this.settings.tires];
+    const up = (base: number, now: number, txt: string) =>
+      Math.abs(now - base) > 1e-6 ? `${txt} <span class="tech-up">▲</span>` : txt;
+    const pctUp = (mul: number, invert = false) => {
+      const d = Math.round((invert ? 1 - mul : mul - 1) * 100);
+      return d > 0 ? `${invert ? '−' : '+'}${d}% <span class="tech-up">▲</span>` : 'база';
+    };
     const rows: [string, string][] = [
       ['Масса', `${s.mass} кг`],
-      ['Мощность', `${s.maxPower} кВт`],
-      ['ERS-буст', `${s.ersBoostKw} кВт`],
-      ['Макс. скорость', `~${s.topSpeedKmh} км/ч`],
-      ['Прижимная сила Cl', s.downforceCl.toFixed(1)],
-      ['Сопротивление Cd', s.dragCd.toFixed(2)],
+      ['Мощность', up(s.maxPower, u.maxPower, `${Math.round(u.maxPower)} кВт`)],
+      ['ERS-буст', up(s.ersBoostKw, u.ersBoostKw, `${Math.round(u.ersBoostKw)} кВт`)],
+      ['Макс. скорость', up(s.topSpeedKmh, u.topSpeedKmh, `~${Math.round(u.topSpeedKmh)} км/ч`)],
+      ['Прижимная сила Cl', up(s.downforceCl, u.downforceCl, u.downforceCl.toFixed(2))],
+      ['Сопротивление Cd', up(s.dragCd, u.dragCd, u.dragCd.toFixed(3))],
+      ['Тормоза', pctUp(u.brakeMul)],
+      ['Сцепление шин', pctUp(u.gripMul)],
+      ['Расход топлива', pctUp(u.fuelBurnMul, true)],
       ['Колёсная база', `${s.wheelbase.toFixed(1)} м`],
       ['Шины', tire],
     ];
@@ -389,6 +456,14 @@ export class MainMenu {
         this.settings.mode = 'tutorial';
         this.cbs.onShowTutorial();
         break;
+      case 'garage':
+        this.view = 'garage';
+        this.render();
+        break;
+      case 'duel':
+        this.view = 'duel';
+        this.render();
+        break;
       case 'settings':
         this.view = 'settings';
         this.render();
@@ -408,8 +483,24 @@ export class MainMenu {
         break;
       case 'go':
         saveRacePrefs(this.settings);
-        this.cbs.onStart({ ...this.settings });
+        this.cbs.onStart({ ...this.settings, duel: undefined });
         break;
     }
+  }
+
+  /** Deduct the bet up-front (quit / reload = bet lost), then start a 1-on-1 race. */
+  private startDuel(req: DuelStartRequest): void {
+    const bet = req.ctx.bet;
+    if (bet < 1 || bet > this.career.coins) return;
+    this.career.coins -= bet;
+    saveCareer(this.career);
+    this.cbs.onStart({
+      ...this.settings,
+      mode: 'duel',
+      trackId: req.trackId,
+      laps: req.laps,
+      opponentCount: this.settings.opponentCount,
+      duel: { ...req.ctx },
+    });
   }
 }

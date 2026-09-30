@@ -8,7 +8,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "export-tracks": "tsx scripts/export-tracks.ts"
+    "export-tracks": "tsx scripts/export-tracks.ts",
+    "sanity": "tsx scripts/sanity-career.ts",
+    "sim-ai": "tsx scripts/sim-ai-pace.ts"
   },
   "devDependencies": {
     "@types/three": "^0.186.0",

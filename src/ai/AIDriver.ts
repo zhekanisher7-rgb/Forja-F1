@@ -7,6 +7,7 @@ import {
   VehiclePhysics,
   createVehicleState,
   type VehicleState,
+  type Difficulty,
 } from '../physics/VehiclePhysics';
 import { type WeatherState } from '../physics/Weather';
 import { createCarMesh } from '../render/CarMesh';
@@ -17,7 +18,30 @@ export interface AIDriverConfig {
   skill: number; // 0..1 — higher = faster / cleaner line
   aggression: number;
   liveryId: string;
+  /** Target-speed multiplier (tiers / duel rating). Default 1. */
+  paceMul?: number;
+  /** Engine power multiplier. Default 1. */
+  powerMul?: number;
+  /** Override assist level of the AI chassis (default derived from skill). */
+  physicsDifficulty?: Difficulty;
 }
+
+/** Field-wide AI strength (race tiers). Default = original Quick Race field. */
+export interface AIFieldProfile {
+  skillMin: number;
+  skillMax: number;
+  paceMul: number;
+  powerMul: number;
+  aggressionMul: number;
+}
+
+export const DEFAULT_AI_FIELD: AIFieldProfile = {
+  skillMin: 0.4,
+  skillMax: 0.88,
+  paceMul: 1,
+  powerMul: 1,
+  aggressionMul: 1,
+};
 
 export interface AICar {
   id: string;
@@ -60,6 +84,21 @@ function curvatureAhead(track: TrackData, s: number, skill: number): number {
   return Math.abs(dYaw);
 }
 
+/** AI chassis physics (no mesh) — also used by headless sanity scripts. */
+export function createAIPhysics(config: AIDriverConfig, weather: WeatherState): VehiclePhysics {
+  return new VehiclePhysics({
+    difficulty:
+      config.physicsDifficulty ??
+      (config.skill > 0.7 ? 'pro' : config.skill > 0.4 ? 'amateur' : 'rookie'),
+    weather,
+    mass: 620,
+    maxPower: (850 + config.skill * 110) * (config.powerMul ?? 1),
+    dragCd: 0.9,
+    downforceCl: 2.9,
+    wheelbase: 3.6,
+  });
+}
+
 export function createAICar(
   id: string,
   config: AIDriverConfig,
@@ -84,15 +123,7 @@ export function createAICar(
   // AI start with slightly less fuel variance (cosmetic)
   vehicle.fuel = 0.92 + config.skill * 0.06;
 
-  const physics = new VehiclePhysics({
-    difficulty: config.skill > 0.7 ? 'pro' : config.skill > 0.4 ? 'amateur' : 'rookie',
-    weather,
-    mass: 620,
-    maxPower: 850 + config.skill * 110,
-    dragCd: 0.9,
-    downforceCl: 2.9,
-    wheelbase: 3.6,
-  });
+  const physics = createAIPhysics(config, weather);
 
   const racingNumber = 11 + (parseInt(id.replace(/\D/g, ''), 10) || 0) * 11;
   const mesh = createCarMesh(getLivery(config.liveryId), { castShadow, racingNumber });
@@ -139,9 +170,11 @@ export function updateAICar(ai: AICar, track: TrackData, dt: number): void {
 
   const curv = curvatureAhead(track, v.distanceAlong, skill);
   // Target speed from curvature — skill raises ceiling; softer during launch
-  const baseMax = 48 + skill * 22; // m/s ~170–250 km/h
+  const baseMax = (48 + skill * 22) * (ai.config.paceMul ?? 1); // m/s ~170–250 km/h at pace ×1
   const cornerMax = Math.max(12, baseMax * (1 - Math.min(0.85, curv * 2.8)));
   const speed = Math.abs(v.speed);
+  // Aggressive drivers (international tier / top duel rivals) brake a touch later
+  const brakeSlack = 2 + Math.max(0, ai.config.aggression - 0.58) * 6;
 
   const input = emptyInput();
   // Steer — proportional; dial down aggression in first seconds
@@ -157,7 +190,7 @@ export function updateAICar(ai: AICar, track: TrackData, dt: number): void {
       input.throttle = Math.min(1, 0.88 + skill * 0.12);
       input.brake = 0;
     }
-  } else if (speed > cornerMax + 2) {
+  } else if (speed > cornerMax + brakeSlack) {
     input.brake = Math.min(1, (speed - cornerMax) * 0.12);
     input.throttle = 0;
   } else if (speed > cornerMax) {
@@ -271,19 +304,26 @@ export function createAIGrid(
   weather: WeatherState,
   castShadow: boolean,
   count: number = DEFAULT_OPPONENT_COUNT,
+  profile: AIFieldProfile = DEFAULT_AI_FIELD,
+  overrideConfigs?: AIDriverConfig[],
 ): AICar[] {
-  const n = Math.max(1, Math.min(16, Math.round(count)));
+  const n = overrideConfigs
+    ? overrideConfigs.length
+    : Math.max(1, Math.min(16, Math.round(count)));
   const pool = AI_LIVERY_POOL.filter((id) => id !== playerLiveryId);
   // Cycle liveries if field > pool size
-  const configs: AIDriverConfig[] = [];
-  for (let i = 0; i < n; i++) {
+  const configs: AIDriverConfig[] = overrideConfigs ? overrideConfigs.slice() : [];
+  for (let i = 0; !overrideConfigs && i < n; i++) {
     const t = n <= 1 ? 1 : i / (n - 1);
-    const skill = 0.88 - t * 0.48; // 0.88 … ~0.40
-    const aggression = 0.58 - t * 0.32;
+    // Default profile: 0.88 … ~0.40 (original field)
+    const skill = profile.skillMax - t * (profile.skillMax - profile.skillMin);
+    const aggression = Math.min(1, (0.58 - t * 0.32) * profile.aggressionMul);
     configs.push({
       skill,
       aggression,
       liveryId: pool[i % pool.length] ?? 'mercedes',
+      paceMul: profile.paceMul,
+      powerMul: profile.powerMul,
     });
   }
 

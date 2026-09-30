@@ -9,6 +9,27 @@ export interface RaceResult {
   /** Disqualification (e.g. missed mandatory pit) */
   disqualified?: boolean;
   dqReason?: string;
+  /** Quick Race career coins (set by Game). */
+  coins?: {
+    earned: number;
+    base: number;
+    tierMul: number;
+    tierName: string;
+    balance: number;
+  };
+  /** Duel settlement (set by Game). */
+  duel?: {
+    won: boolean;
+    bet: number;
+    coef: number;
+    payout: number;
+    opponent: string;
+    balance: number;
+  };
+}
+
+function coins(n: number): string {
+  return Math.round(n).toLocaleString('ru-RU');
 }
 
 function fmt(ms: number): string {
@@ -35,7 +56,24 @@ export class ResultsScreen {
     const pos = result.position ?? 1;
     const field = result.fieldSize ?? 1;
     const dq = !!result.disqualified;
-    const title = dq ? '⛔ ДИСКВАЛИФИКАЦИЯ' : '🏁 ФИНИШ';
+    const duel = result.duel;
+    let title = dq ? '⛔ ДИСКВАЛИФИКАЦИЯ' : '🏁 ФИНИШ';
+    if (duel) title = duel.won ? `🏆 Победа! +${coins(duel.payout)} монет` : '💀 Поражение. Ставка сгорела';
+    let coinBlock = '';
+    if (result.coins) {
+      const c = result.coins;
+      coinBlock = `
+        <div class="results-coins${c.earned > 0 ? '' : ' none'}">
+          <div class="rc-main">🪙 +${coins(c.earned)} монет</div>
+          <div class="rc-sub">${c.earned > 0 ? `${coins(c.base)} × ${c.tierMul} (${c.tierName})` : 'Без награды при дисквалификации'} · баланс ${coins(c.balance)}</div>
+        </div>`;
+    } else if (duel) {
+      coinBlock = `
+        <div class="results-coins${duel.won ? '' : ' none'}">
+          <div class="rc-main">${duel.won ? `🪙 +${coins(duel.payout)}` : `🪙 −${coins(duel.bet)}`}</div>
+          <div class="rc-sub">Соперник: ${duel.opponent} · ставка ${coins(duel.bet)} × ${duel.coef.toFixed(2)} · баланс ${coins(duel.balance)}</div>
+        </div>`;
+    }
     const dqBlock = dq
       ? `<div class="results-dq">${result.dqReason ?? 'Нарушение регламента'}</div>`
       : '';
@@ -43,9 +81,10 @@ export class ResultsScreen {
       ? `<div class="results-stat"><span class="label">СТАТУС</span><span class="value dq">DQ</span></div>`
       : `<div class="results-stat"><span class="label">ПОЗИЦИЯ</span><span class="value">${pos} / ${field}</span></div>`;
     this.el.innerHTML = `
-      <div class="results-card${dq ? ' dq' : ''}">
-        <h2>${title}</h2>
+      <div class="results-card${dq || (duel && !duel.won) ? ' dq' : ''}">
+        <h2 class="${duel ? 'long' : ''}">${title}</h2>
         ${dqBlock}
+        ${coinBlock}
         ${posBlock}
         <div class="results-stat"><span class="label">ОБЩЕЕ ВРЕМЯ</span><span class="value">${fmt(result.totalTimeMs)}</span></div>
         <div class="results-stat"><span class="label">ЛУЧШИЙ КРУГ</span><span class="value">${fmt(result.bestLapMs)}</span></div>

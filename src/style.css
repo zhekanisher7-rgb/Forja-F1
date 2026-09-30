@@ -779,3 +779,142 @@ canvas#game-canvas {
   text-align: center;
   letter-spacing: 0.02em;
 }
+
+/* ---- Career: coins / garage / duel ---- */
+.panel-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.6rem;
+}
+.panel-sub {
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  color: var(--f1-muted);
+  text-transform: uppercase;
+}
+.panel-note {
+  color: var(--f1-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  margin-top: 0.6rem;
+}
+.coin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid rgba(245, 197, 24, 0.55);
+  border-radius: 999px;
+  background: rgba(245, 197, 24, 0.1);
+  font-family: var(--font-display);
+  color: var(--f1-gold);
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+.wide-panel {
+  width: min(640px, 94vw);
+  max-height: calc(100vh - 6rem);
+  overflow-y: auto;
+}
+.gar-list { display: grid; gap: 0.55rem; }
+.gar-row {
+  background: #0e1018;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-left: 3px solid var(--f1-red);
+  border-radius: 6px;
+  padding: 0.55rem 0.75rem;
+}
+.gar-row.flash { animation: garFlash 0.6s ease-out; }
+@keyframes garFlash {
+  from { box-shadow: 0 0 0 2px var(--f1-gold); }
+  to { box-shadow: 0 0 0 0 transparent; }
+}
+.gar-head { display: flex; justify-content: space-between; align-items: baseline; }
+.gar-name { font-family: var(--font-display); font-size: 0.9rem; letter-spacing: 0.04em; }
+.gar-lvl { font-family: var(--font-display); font-size: 0.75rem; color: var(--f1-accent); }
+.seg-bar { display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; margin: 0.4rem 0 0.3rem; }
+.seg-bar .seg { height: 8px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); }
+.seg-bar .seg.on { background: linear-gradient(90deg, var(--f1-red), #ff6b00); box-shadow: 0 0 5px rgba(225, 6, 0, 0.5); }
+.gar-bonus { font-size: 0.8rem; color: var(--f1-text); }
+.gar-foot { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; margin-top: 0.35rem; }
+.gar-next { font-size: 0.72rem; color: var(--f1-muted); line-height: 1.3; }
+.gar-max { color: var(--f1-gold); font-family: var(--font-display); }
+.gar-buy {
+  flex-shrink: 0;
+  padding: 0.4rem 0.75rem;
+  background: linear-gradient(90deg, rgba(225, 6, 0, 0.35), rgba(225, 6, 0, 0.12));
+  border: 1px solid var(--f1-red);
+  border-radius: 4px;
+  color: var(--f1-text);
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.gar-buy:hover:not(:disabled) { background: rgba(225, 6, 0, 0.6); }
+.gar-buy:disabled { opacity: 0.4; cursor: not-allowed; border-color: rgba(255, 255, 255, 0.2); }
+.gar-summary {
+  margin-top: 0.7rem;
+  font-size: 0.75rem;
+  color: var(--f1-accent);
+  font-family: var(--font-display);
+  letter-spacing: 0.03em;
+  line-height: 1.4;
+}
+.tech-up { color: var(--f1-gold); font-size: 0.65rem; }
+
+.duel-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0.4rem; }
+.duel-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.1rem 0.5rem;
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  background: #0e1018;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: var(--f1-text);
+  cursor: pointer;
+  transition: border-color 0.12s, transform 0.1s;
+}
+.duel-card:hover { border-color: rgba(225, 6, 0, 0.6); transform: translateY(-1px); }
+.duel-card.selected { border-color: var(--f1-gold); box-shadow: 0 0 10px rgba(245, 197, 24, 0.25); }
+.duel-lvl { font-family: var(--font-display); font-size: 0.62rem; letter-spacing: 0.08em; color: var(--f1-muted); text-transform: uppercase; }
+.duel-lvl, .duel-name, .duel-rating { grid-column: 1; }
+.duel-coef { grid-column: 2; grid-row: 1 / span 3; align-self: center; font-family: var(--font-display); font-size: 1rem; color: var(--f1-gold); }
+.duel-name { font-size: 0.85rem; font-weight: 700; }
+.duel-rating { font-size: 0.7rem; }
+.duel-rating.lo { color: var(--f1-accent); }
+.duel-rating.hi { color: #ff7a6b; }
+.duel-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.duel-summary {
+  background: #0e1018;
+  border: 1px solid rgba(245, 197, 24, 0.3);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  margin: 0.25rem 0 0.4rem;
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+.duel-summary > div { display: flex; justify-content: space-between; gap: 1rem; }
+.duel-summary span { color: var(--f1-muted); }
+.duel-summary .gold { color: var(--f1-gold); font-family: var(--font-display); }
+.duel-summary .warn { color: #ffb4b0; }
+.menu-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+.results-card h2.long { font-size: 1.3rem; letter-spacing: 0.06em; }
+.results-coins {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.9rem;
+  background: rgba(245, 197, 24, 0.1);
+  border: 1px solid rgba(245, 197, 24, 0.45);
+  border-radius: 6px;
+}
+.results-coins.none { background: rgba(225, 6, 0, 0.1); border-color: rgba(225, 6, 0, 0.4); }
+.rc-main { font-family: var(--font-display); font-size: 1.2rem; color: var(--f1-gold); }
+.results-coins.none .rc-main { color: #ff7a6b; }
+.rc-sub { font-size: 0.78rem; color: var(--f1-muted); margin-top: 0.2rem; }

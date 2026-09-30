@@ -29,7 +29,17 @@ import {
 import { MainMenu, type RaceSettings } from '../ui/MainMenu';
 import { HUD } from '../ui/HUD';
 import { TutorialOverlay } from '../ui/Tutorial';
-import { ResultsScreen } from '../ui/Results';
+import { ResultsScreen, type RaceResult } from '../ui/Results';
+import {
+  loadCareer,
+  saveCareer,
+  computeRaceReward,
+  applyRaceReward,
+  TIERS,
+  type CareerState,
+} from './Career';
+import { upgradedSpec } from './Upgrades';
+import { getDuelDriver, duelAIConfig, duelPayout } from './Duel';
 import { getLivery, type Livery } from '../vehicles/Liveries';
 import { createAIGrid, updateAICar, PLAYER_GRID_S, DEFAULT_OPPONENT_COUNT, type AICar } from '../ai/AIDriver';
 import { resolveFieldCollisions } from '../physics/CarCollision';
@@ -99,6 +109,11 @@ export class Game {
   /** Disarm double-count: must leave S/F zone after a lap */
   private static readonly LAP_REARM_S = 40;
 
+  /** Persistent coins + upgrade levels (shared by reference with the menu). */
+  private career: CareerState = loadCareer();
+  /** Guard: reward / duel settlement exactly once per race. */
+  private raceSettled = false;
+
   private clock = new THREE.Clock();
   private running = false;
   private showRacingLine = false;
@@ -132,7 +147,7 @@ export class Game {
       },
       onCredits: () => {},
       onGraphicsChange: (g) => this.applyGraphicsFromMenu(g),
-    }, this.graphics);
+    }, this.graphics, this.career);
 
     this.tutorial = new TutorialOverlay(app, () => {
       const s = this.menu.getSettings();
@@ -285,12 +300,24 @@ export class Game {
     this.vehicle.lap = 1;
     this.vehicle.currentLapMs = 0;
 
-    // Same PLAYER_VEHICLE_SPEC in Quick Race and Time Trial — AI presence never scales these.
+    // Same PLAYER_VEHICLE_SPEC in every mode, plus garage upgrades (player only).
+    const up = upgradedSpec(this.career.levels);
     this.physics = new VehiclePhysics({
       difficulty: settings.difficulty,
       weather,
-      ...PLAYER_VEHICLE_SPEC,
+      mass: PLAYER_VEHICLE_SPEC.mass,
+      wheelbase: PLAYER_VEHICLE_SPEC.wheelbase,
+      maxPower: up.maxPower,
+      dragCd: up.dragCd,
+      downforceCl: up.downforceCl,
+      gripMul: up.gripMul,
+      brakeMul: up.brakeMul,
+      fuelBurnMul: up.fuelBurnMul,
+      ersBoostKw: up.ersBoostKw,
+      ersDrainMul: up.ersDrainMul,
+      ersRegenMul: up.ersRegenMul,
     });
+    this.raceSettled = false;
 
     this.pitBusy = false;
     this.pitCooldown = 0;
@@ -306,14 +333,27 @@ export class Game {
     );
 
     // AI opponents (skip in time-trial solo focus? keep them for quick/tutorial)
-    if (settings.mode !== 'timetrial') {
+    const duelDriver = settings.mode === 'duel' && settings.duel
+      ? getDuelDriver(settings.duel.driverId)
+      : undefined;
+    if (duelDriver) {
+      // 1-on-1: single rival whose pace comes from its rating
+      const cfg = duelAIConfig(duelDriver);
+      if (cfg.liveryId === settings.liveryId) cfg.liveryId = 'cadillac';
+      this.aiCars = createAIGrid(this.track, settings.liveryId, weather, castShadow, 1, undefined, [cfg]);
+      this.aiLapArmed = this.aiCars.map(() => false);
+      for (const ai of this.aiCars) this.scene.add(ai.mesh);
+    } else if (settings.mode !== 'timetrial') {
       const oppCount = settings.opponentCount ?? DEFAULT_OPPONENT_COUNT;
+      // Quick Race: AI strength from career tier; tutorial keeps the original field
+      const profile = settings.mode === 'quick' ? TIERS[settings.tier ?? 'city'].ai : undefined;
       this.aiCars = createAIGrid(
         this.track,
         settings.liveryId,
         weather,
         castShadow,
         oppCount,
+        profile,
       ); // castShadow = carCastShadow || sceneryCastShadow
       this.aiLapArmed = this.aiCars.map(() => false);
       for (const ai of this.aiCars) {
@@ -709,17 +749,80 @@ export class Game {
     this.pitBusy = false;
     this.pitStop.close();
     this.hud.hide();
-    this.results.show({
-      totalTimeMs: this.raceTimeMs,
-      bestLapMs: this.vehicle.bestLapMs,
-      lapsCompleted: Math.max(0, this.vehicle.lap - 1),
-      damage: this.vehicle.damage,
-      tireWear: this.vehicle.tires.wear,
-      position: this.getPlayerPosition(),
-      fieldSize: 1 + this.aiCars.length,
-      disqualified: true,
-      dqReason: reason,
-    });
+    this.results.show(
+      this.settleCareer({
+        totalTimeMs: this.raceTimeMs,
+        bestLapMs: this.vehicle.bestLapMs,
+        lapsCompleted: Math.max(0, this.vehicle.lap - 1),
+        damage: this.vehicle.damage,
+        tireWear: this.vehicle.tires.wear,
+        position: this.getPlayerPosition(),
+        fieldSize: 1 + this.aiCars.length,
+        disqualified: true,
+        dqReason: reason,
+      }),
+    );
+  }
+
+  /**
+   * Coins: Quick Race pays by position × tier; duels pay bet × coef on a win
+   * (bet was already deducted at start). Time trial / tutorial pay nothing.
+   */
+  private settleCareer(r: RaceResult): RaceResult {
+    const s = this.settings;
+    if (!s || this.raceSettled) return r;
+    this.raceSettled = true;
+    const dq = !!r.disqualified;
+    const pos = r.position ?? 1;
+    const field = r.fieldSize ?? 1;
+    if (s.mode === 'quick') {
+      const tier = s.tier ?? 'city';
+      const reward = computeRaceReward(pos, field, this.totalLaps, tier, dq);
+      applyRaceReward(this.career, reward, pos, dq);
+      r.coins = {
+        earned: reward.total,
+        base: reward.base,
+        tierMul: reward.tierMul,
+        tierName: TIERS[tier].nameRu,
+        balance: this.career.coins,
+      };
+    } else if (s.mode === 'duel' && s.duel) {
+      const won = !dq && pos === 1;
+      const payout = won ? duelPayout(s.duel.bet, s.duel.coef) : 0;
+      this.career.coins += payout;
+      if (won) this.career.stats.duelsWon += 1;
+      else this.career.stats.duelsLost += 1;
+      saveCareer(this.career);
+      r.duel = {
+        won,
+        bet: s.duel.bet,
+        coef: s.duel.coef,
+        payout,
+        opponent: getDuelDriver(s.duel.driverId)?.name ?? 'Соперник',
+        balance: this.career.coins,
+      };
+    }
+    return r;
+  }
+
+  /** Duel rival crossed the line first — result is decided, end immediately. */
+  private endDuelLost(): void {
+    if (!this.vehicle || this.phase !== 'racing') return;
+    this.phase = 'finished';
+    this.pitBusy = false;
+    this.pitStop.close();
+    this.hud.hide();
+    this.results.show(
+      this.settleCareer({
+        totalTimeMs: this.raceTimeMs,
+        bestLapMs: this.vehicle.bestLapMs,
+        lapsCompleted: Math.max(0, this.vehicle.lap - 1),
+        damage: this.vehicle.damage,
+        tireWear: this.vehicle.tires.wear,
+        position: 2,
+        fieldSize: 2,
+      }),
+    );
   }
 
   /** AI + collisions only (used while player is in pit UI). */
@@ -768,6 +871,9 @@ export class Game {
           this.aiLapArmed[i] = false;
           if (ai.vehicle.lap > this.totalLaps) {
             this.markFinished(ai.vehicle);
+            if (this.settings?.mode === 'duel' && !this.vehicle.finished) {
+              this.endDuelLost();
+            }
           }
         }
       }
@@ -783,15 +889,17 @@ export class Game {
     this.phase = 'finished';
     this.markFinished(this.vehicle);
     this.hud.hide();
-    this.results.show({
-      totalTimeMs: this.raceTimeMs,
-      bestLapMs: this.vehicle.bestLapMs,
-      lapsCompleted: this.totalLaps,
-      damage: this.vehicle.damage,
-      tireWear: this.vehicle.tires.wear,
-      position: this.getPlayerPosition(),
-      fieldSize: 1 + this.aiCars.length,
-    });
+    this.results.show(
+      this.settleCareer({
+        totalTimeMs: this.raceTimeMs,
+        bestLapMs: this.vehicle.bestLapMs,
+        lapsCompleted: this.totalLaps,
+        damage: this.vehicle.damage,
+        tireWear: this.vehicle.tires.wear,
+        position: this.getPlayerPosition(),
+        fieldSize: 1 + this.aiCars.length,
+      }),
+    );
   }
 
   private syncCarMesh(): void {
